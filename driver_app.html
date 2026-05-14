@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Air Bistro — 司機端</title>
+
+<!-- ★ 設定區 -->
+<script>
+  const CONFIG = {
+    SUPABASE_URL:      'YOUR_SUPABASE_URL',
+    SUPABASE_ANON_KEY: 'YOUR_SUPABASE_ANON_KEY',
+    GAS_WEBHOOK_URL:   'YOUR_GAS_WEBHOOK_URL',
+    DRIVER_PIN:        '8888',   // 預設 PIN，可在 Supabase drivers 表修改
+    GPS_INTERVAL_MS:   30000,    // 每 30 秒回傳一次 GPS
+  };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  :root {
+    --green-dark: #0D1F1A; --green-mid: #1B3A2D; --green-card: #1E3D2F;
+    --gold: #C9A84C; --gold-light: #E8C96B; --white: #F5F5F0;
+    --gray: #8A9E93; --danger: #E05C5C; --success: #4CAF81; --orange: #E8943A;
+  }
+  body { background:var(--green-dark); color:var(--white);
+         font-family:-apple-system,'PingFang TC',sans-serif; min-height:100vh; }
+
+  /* ===== 登入畫面 ===== */
+  .login-screen {
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    min-height:100vh; padding:40px 24px; text-align:center;
+  }
+  .login-icon { font-size:60px; margin-bottom:20px; }
+  .login-title { font-size:22px; font-weight:700; color:var(--gold); margin-bottom:8px; }
+  .login-sub { font-size:14px; color:var(--gray); margin-bottom:32px; }
+  .pin-display {
+    display:flex; gap:12px; justify-content:center; margin-bottom:24px;
+  }
+  .pin-dot {
+    width:18px; height:18px; border-radius:50%;
+    border:2px solid rgba(201,168,76,0.5); background:transparent; transition:all 0.2s;
+  }
+  .pin-dot.filled { background:var(--gold); border-color:var(--gold); }
+  .pin-pad { display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; max-width:260px; }
+  .pin-btn {
+    padding:18px; border:1px solid rgba(201,168,76,0.2); border-radius:14px;
+    background:rgba(255,255,255,0.03); color:var(--white); font-size:20px; font-weight:600;
+    cursor:pointer; transition:all 0.15s;
+  }
+  .pin-btn:active { background:rgba(201,168,76,0.2); transform:scale(0.95); }
+  .pin-btn.special { color:var(--gold); font-size:14px; }
+  .pin-error { color:var(--danger); font-size:13px; margin-top:12px; min-height:20px; }
+
+  /* ===== 主畫面 ===== */
+  .main-screen { display:none; }
+  .header {
+    background:var(--green-mid); padding:16px 20px;
+    display:flex; align-items:center; justify-content:space-between;
+    border-bottom:1px solid rgba(201,168,76,0.2); position:sticky; top:0; z-index:10;
+  }
+  .header-title { font-size:16px; font-weight:700; color:var(--gold); }
+  .header-sub { font-size:12px; color:var(--gray); margin-top:2px; }
+  .gps-badge {
+    display:flex; align-items:center; gap:6px; font-size:12px;
+    padding:6px 12px; border-radius:20px; border:1px solid;
+  }
+  .gps-badge.active { color:var(--success); border-color:var(--success); background:rgba(76,175,129,0.1); }
+  .gps-badge.inactive { color:var(--gray); border-color:var(--gray); }
+  .gps-dot { width:8px; height:8px; border-radius:50%; }
+  .gps-badge.active .gps-dot { background:var(--success); animation:blink 1.5s infinite; }
+  .gps-badge.inactive .gps-dot { background:var(--gray); }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* ===== 狀態列 ===== */
+  .status-bar {
+    background:rgba(201,168,76,0.08); border-bottom:1px solid rgba(201,168,76,0.15);
+    padding:12px 20px; display:flex; gap:24px; overflow-x:auto;
+  }
+  .stat-item { flex-shrink:0; text-align:center; }
+  .stat-num { font-size:20px; font-weight:700; color:var(--gold); }
+  .stat-label { font-size:11px; color:var(--gray); margin-top:2px; }
+
+  /* ===== 訂單卡片 ===== */
+  .orders-container { padding:16px; display:flex; flex-direction:column; gap:12px; }
+  .order-card {
+    background:var(--green-card); border:1px solid rgba(201,168,76,0.15);
+    border-radius:16px; overflow:hidden; transition:border-color 0.2s;
+  }
+  .order-card.current { border-color:var(--orange); }
+  .order-card.delivered { opacity:0.5; }
+  .order-header {
+    padding:14px 16px; display:flex; align-items:center; justify-content:space-between;
+    border-bottom:1px solid rgba(255,255,255,0.07);
+  }
+  .order-num { font-size:13px; font-weight:700; color:var(--gold); letter-spacing:1px; }
+  .order-time { font-size:12px; color:var(--gray); }
+  .status-chip {
+    padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600;
+  }
+  .chip-pending { background:rgba(138,158,147,0.2); color:var(--gray); }
+  .chip-current { background:rgba(232,148,58,0.2); color:var(--orange); }
+  .chip-delivered { background:rgba(76,175,129,0.15); color:var(--success); }
+  .order-body { padding:14px 16px; }
+  .order-address { font-size:15px; font-weight:600; color:var(--white); margin-bottom:8px; }
+  .order-items-list { font-size:13px; color:var(--gray); line-height:1.8; }
+  .order-amount {
+    font-size:16px; font-weight:700; color:var(--gold); margin-top:10px;
+  }
+  .order-actions { padding:12px 16px; display:flex; gap:10px; border-top:1px solid rgba(255,255,255,0.07); }
+  .btn-nav {
+    flex:1; padding:12px; border:1px solid rgba(201,168,76,0.4); border-radius:12px;
+    background:transparent; color:var(--gold); font-size:14px; font-weight:600; cursor:pointer;
+  }
+  .btn-nav:active { background:rgba(201,168,76,0.1); }
+  .btn-delivered {
+    flex:2; padding:12px; background:var(--success); border:none; border-radius:12px;
+    color:white; font-size:14px; font-weight:700; cursor:pointer; transition:all 0.2s;
+  }
+  .btn-delivered:active { transform:scale(0.97); }
+  .btn-delivered:disabled { opacity:0.4; cursor:not-allowed; }
+
+  /* ===== 空狀態 ===== */
+  .empty-state {
+    text-align:center; padding:60px 20px; color:var(--gray);
+  }
+  .empty-icon { font-size:48px; margin-bottom:12px; opacity:0.5; }
+
+  /* ===== 開始出勤按鈕 ===== */
+  .start-btn {
+    margin:16px; padding:16px;
+    background:linear-gradient(135deg,var(--gold),#A07830);
+    border:none; border-radius:14px;
+    color:var(--green-dark); font-size:16px; font-weight:700;
+    cursor:pointer; width:calc(100% - 32px); display:block;
+  }
+  .start-btn:active { transform:scale(0.98); }
+</style>
+</head>
+<body>
+
+<!-- ===== 登入畫面 ===== -->
+<div class="login-screen" id="login-screen">
+  <div class="login-icon">🚐</div>
+  <div class="login-title">Air Bistro 司機端</div>
+  <div class="login-sub">請輸入您的 PIN 碼</div>
+  <div class="pin-display">
+    <div class="pin-dot" id="dot-0"></div>
+    <div class="pin-dot" id="dot-1"></div>
+    <div class="pin-dot" id="dot-2"></div>
+    <div class="pin-dot" id="dot-3"></div>
+  </div>
+  <div class="pin-pad">
+    <button class="pin-btn" onclick="inputPin('1')">1</button>
+    <button class="pin-btn" onclick="inputPin('2')">2</button>
+    <button class="pin-btn" onclick="inputPin('3')">3</button>
+    <button class="pin-btn" onclick="inputPin('4')">4</button>
+    <button class="pin-btn" onclick="inputPin('5')">5</button>
+    <button class="pin-btn" onclick="inputPin('6')">6</button>
+    <button class="pin-btn" onclick="inputPin('7')">7</button>
+    <button class="pin-btn" onclick="inputPin('8')">8</button>
+    <button class="pin-btn" onclick="inputPin('9')">9</button>
+    <button class="pin-btn special" onclick="clearPin()">清除</button>
+    <button class="pin-btn" onclick="inputPin('0')">0</button>
+    <button class="pin-btn special" onclick="backspacePin()">⌫</button>
+  </div>
+  <div class="pin-error" id="pin-error"></div>
+</div>
+
+<!-- ===== 主畫面 ===== -->
+<div class="main-screen" id="main-screen">
+  <div class="header">
+    <div>
+      <div class="header-title">🚐 Air Bistro 司機端</div>
+      <div class="header-sub" id="header-date">今日派單</div>
+    </div>
+    <div class="gps-badge inactive" id="gps-badge">
+      <div class="gps-dot"></div>
+      <span id="gps-text">GPS 待機</span>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <div class="stat-item">
+      <div class="stat-num" id="stat-total">0</div>
+      <div class="stat-label">今日訂單</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num" id="stat-pending">0</div>
+      <div class="stat-label">待送</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num" id="stat-delivered">0</div>
+      <div class="stat-label">已送達</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num" id="stat-amount">$0</div>
+      <div class="stat-label">今日收款</div>
+    </div>
+  </div>
+
+  <button class="start-btn" id="start-btn" onclick="toggleGPS()">🟢 開始出勤（啟動 GPS）</button>
+
+  <div class="orders-container" id="orders-container">
+    <div class="empty-state">
+      <div class="empty-icon">📋</div>
+      <div>載入訂單中...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const db = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+
+let driverData = null;
+let todayOrders = [];
+let gpsInterval = null;
+let isTracking = false;
+let pinBuffer = '';
+
+// ============================================================
+// PIN 登入
+// ============================================================
+function inputPin(digit) {
+  if (pinBuffer.length >= 4) return;
+  pinBuffer += digit;
+  updatePinDots();
+  if (pinBuffer.length === 4) setTimeout(checkPin, 100);
+}
+
+function backspacePin() { pinBuffer = pinBuffer.slice(0, -1); updatePinDots(); }
+function clearPin()     { pinBuffer = ''; updatePinDots(); }
+
+function updatePinDots() {
+  for (let i = 0; i < 4; i++) {
+    document.getElementById('dot-' + i).classList.toggle('filled', i < pinBuffer.length);
+  }
+}
+
+async function checkPin() {
+  const { data: driver } = await db.from('drivers').select('*').eq('pin_code', pinBuffer).single();
+  if (driver) {
+    driverData = driver;
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('main-screen').style.display = 'block';
+    const today = new Date().toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', weekday: 'long' });
+    document.getElementById('header-date').textContent = today;
+    loadTodayOrders();
+    subscribeToOrders();
+  } else {
+    pinBuffer = '';
+    updatePinDots();
+    const errEl = document.getElementById('pin-error');
+    errEl.textContent = 'PIN 碼錯誤，請再試一次';
+    setTimeout(() => errEl.textContent = '', 2000);
+  }
+}
+
+// ============================================================
+// 載入今日訂單
+// ============================================================
+async function loadTodayOrders() {
+  const today = new Date().toISOString().split('T')[0];
+  const { data: orders } = await db.from('orders')
+    .select('*').eq('requested_date', today)
+    .neq('status', 'cancelled')
+    .order('requested_time_slot');
+
+  todayOrders = orders || [];
+  renderOrders();
+  updateStats();
+}
+
+function renderOrders() {
+  const container = document.getElementById('orders-container');
+  if (!todayOrders.length) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🎉</div><div>今日暫無訂單</div></div>`;
+    return;
+  }
+
+  container.innerHTML = todayOrders.map(order => {
+    const isCurrent = order.status === 'dispatched' || order.status === 'en_route';
+    const isDelivered = order.status === 'delivered';
+    const items = Array.isArray(order.items)
+      ? order.items.map(i => `${i.emoji || '🍹'} ${i.name} ×${i.qty}`).join('、')
+      : '';
+
+    let chipClass = 'chip-pending', chipText = '待送';
+    if (isCurrent)   { chipClass = 'chip-current'; chipText = '配送中'; }
+    if (isDelivered) { chipClass = 'chip-delivered'; chipText = '已送達'; }
+
+    const mapsUrl = `https://maps.google.com/?q=${encodeURIComponent(order.delivery_address)}`;
+
+    return `
+      <div class="order-card ${isCurrent ? 'current' : ''} ${isDelivered ? 'delivered' : ''}">
+        <div class="order-header">
+          <div>
+            <div class="order-num">${order.order_number}</div>
+            <div class="order-time">⏰ ${order.requested_time_slot}</div>
+          </div>
+          <div class="status-chip ${chipClass}">${chipText}</div>
+        </div>
+        <div class="order-body">
+          <div class="order-address">📍 ${order.delivery_address}</div>
+          <div class="order-items-list">${items}</div>
+          ${order.member_notes ? `<div style="color:var(--orange);font-size:12px;margin-top:8px">📝 ${order.member_notes}</div>` : ''}
+          <div class="order-amount">💰 收款 $${order.total_amount}</div>
+        </div>
+        ${!isDelivered ? `
+        <div class="order-actions">
+          <button class="btn-nav" onclick="openMaps('${mapsUrl}')">🗺️ 導航</button>
+          <button class="btn-delivered" onclick="markDelivered('${order.id}')"
+            ${isDelivered ? 'disabled' : ''}>✅ 已送達</button>
+        </div>` : `
+        <div style="padding:10px 16px;font-size:13px;color:var(--success);text-align:center">
+          ✅ 已送達 ${order.delivered_at ? new Date(order.delivered_at).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'}) : ''}
+        </div>`}
+      </div>
+    `;
+  }).join('');
+}
+
+function updateStats() {
+  const total     = todayOrders.length;
+  const delivered = todayOrders.filter(o => o.status === 'delivered').length;
+  const pending   = total - delivered;
+  const amount    = todayOrders.filter(o => o.status === 'delivered').reduce((s, o) => s + o.total_amount, 0);
+  document.getElementById('stat-total').textContent     = total;
+  document.getElementById('stat-pending').textContent   = pending;
+  document.getElementById('stat-delivered').textContent = delivered;
+  document.getElementById('stat-amount').textContent    = '$' + amount;
+}
+
+// ============================================================
+// 訂單完成
+// ============================================================
+async function markDelivered(orderId) {
+  if (!confirm('確認此訂單已送達並收款？')) return;
+
+  const { error } = await db.from('orders').update({
+    status: 'delivered', delivered_at: new Date().toISOString()
+  }).eq('id', orderId);
+
+  if (!error) {
+    showToast('✅ 訂單已完成！');
+    await notifyDelivered(orderId);
+    loadTodayOrders();
+  }
+}
+
+async function notifyDelivered(orderId) {
+  const order = todayOrders.find(o => o.id === orderId);
+  if (!order) return;
+  try {
+    await fetch(CONFIG.GAS_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'delivered', order })
+    });
+  } catch(e) { console.warn('Notify fail:', e); }
+}
+
+// ============================================================
+// GPS 追蹤
+// ============================================================
+function toggleGPS() {
+  if (!isTracking) startGPS(); else stopGPS();
+}
+
+function startGPS() {
+  if (!navigator.geolocation) { showToast('❌ 此裝置不支援 GPS'); return; }
+  isTracking = true;
+  document.getElementById('start-btn').textContent = '🔴 停止出勤';
+  updateGPSBadge(true);
+
+  // 啟動時更新一次
+  sendLocation();
+  // 每 30 秒更新
+  gpsInterval = setInterval(sendLocation, CONFIG.GPS_INTERVAL_MS);
+
+  // 標記司機上線
+  db.from('drivers').update({ is_active: true }).eq('id', driverData.id);
+}
+
+function stopGPS() {
+  isTracking = false;
+  clearInterval(gpsInterval);
+  document.getElementById('start-btn').textContent = '🟢 開始出勤（啟動 GPS）';
+  updateGPSBadge(false);
+  db.from('drivers').update({ is_active: false }).eq('id', driverData.id);
+}
+
+function sendLocation() {
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    const { latitude, longitude } = pos.coords;
+    await db.from('drivers').update({
+      current_lat: latitude, current_lng: longitude,
+      last_location_update: new Date().toISOString()
+    }).eq('id', driverData.id);
+  }, (err) => { console.warn('GPS error:', err); });
+}
+
+function updateGPSBadge(active) {
+  const badge = document.getElementById('gps-badge');
+  const text  = document.getElementById('gps-text');
+  badge.className = 'gps-badge ' + (active ? 'active' : 'inactive');
+  text.textContent = active ? 'GPS 傳輸中' : 'GPS 待機';
+}
+
+// ============================================================
+// 即時訂單更新（Supabase Realtime）
+// ============================================================
+function subscribeToOrders() {
+  const today = new Date().toISOString().split('T')[0];
+  db.channel('driver-orders')
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'orders',
+      filter: `requested_date=eq.${today}`
+    }, () => { loadTodayOrders(); })
+    .subscribe();
+}
+
+// ============================================================
+// 工具
+// ============================================================
+function openMaps(url) { window.open(url, '_blank'); }
+
+function showToast(msg) {
+  // 簡單 alert 在 PWA 環境中足夠
+  const div = document.createElement('div');
+  div.style.cssText = `position:fixed;top:80px;left:50%;transform:translateX(-50%);
+    background:var(--green-card);color:var(--white);padding:10px 20px;
+    border-radius:30px;font-size:14px;z-index:999;border:1px solid rgba(201,168,76,0.3)`;
+  div.textContent = msg;
+  document.body.appendChild(div);
+  setTimeout(() => div.remove(), 3000);
+}
+</script>
+</body>
+</html>

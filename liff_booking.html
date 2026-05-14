@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Air Bistro — Feeling Bar 私人酒水到府</title>
+
+<!-- ★ 設定區：請填入您的 Key -->
+<script>
+  const CONFIG = {
+    LIFF_ID:              'YOUR_LIFF_ID',           // LINE Developers Console 取得
+    SUPABASE_URL:         'YOUR_SUPABASE_URL',       // Supabase Project → Settings → API
+    SUPABASE_ANON_KEY:    'YOUR_SUPABASE_ANON_KEY',  // Supabase Project → Settings → API
+    GOOGLE_MAPS_API_KEY:  'YOUR_GOOGLE_MAPS_API_KEY', // Google Cloud Console 取得
+    GAS_WEBHOOK_URL:      'https://script.google.com/macros/s/AKfycbyv0DD70lX0wsTCoxSaJ6AVdEW1cYL2BfyVEX2ESwHQBX2r1pagqu2f9vPYBnfKsa1m/exec',    // ✅ 已填入 2026-05-14
+    MIN_ORDER_AMOUNT:     800,                       // 最低消費金額 (NTD)
+  };
+</script>
+
+<!-- LINE LIFF SDK -->
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<!-- Supabase Client -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
+<style>
+  /* ===== 全局樣式 ===== */
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  :root {
+    --green-dark:   #0D1F1A;
+    --green-mid:    #1B3A2D;
+    --green-card:   #1E3D2F;
+    --green-light:  #2D5A3D;
+    --gold:         #C9A84C;
+    --gold-light:   #E8C96B;
+    --white:        #F5F5F0;
+    --gray:         #8A9E93;
+    --danger:       #E05C5C;
+    --success:      #4CAF81;
+  }
+
+  body {
+    background: var(--green-dark);
+    color: var(--white);
+    font-family: -apple-system, 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ===== 頂部導覽 ===== */
+  .top-bar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: var(--green-dark);
+    border-bottom: 1px solid rgba(201,168,76,0.2);
+    padding: 14px 20px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .logo { font-size: 18px; font-weight: 700; color: var(--gold); letter-spacing: 1px; }
+  .logo span { color: var(--white); font-weight: 300; }
+  .step-indicator { font-size: 12px; color: var(--gray); }
+
+  /* ===== 畫面容器 ===== */
+  .screen {
+    display: none; padding: 80px 20px 100px;
+    min-height: 100vh; animation: fadeIn 0.3s ease;
+  }
+  .screen.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* ===== 載入畫面 ===== */
+  #screen-loading {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    min-height: 100vh; padding: 0;
+  }
+  .loading-logo { font-size: 48px; margin-bottom: 16px; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.6;transform:scale(0.95)} }
+  .loading-title { font-size: 22px; font-weight: 700; color: var(--gold); margin-bottom: 8px; }
+  .loading-sub { font-size: 14px; color: var(--gray); }
+
+  /* ===== 卡片 ===== */
+  .card {
+    background: var(--green-card);
+    border: 1px solid rgba(201,168,76,0.15);
+    border-radius: 16px; padding: 20px; margin-bottom: 16px;
+  }
+  .card-title { font-size: 13px; color: var(--gold); font-weight: 600;
+    letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px; }
+
+  /* ===== 歡迎畫面 ===== */
+  .welcome-hero {
+    text-align: center; padding: 40px 0 32px;
+  }
+  .welcome-emoji { font-size: 64px; margin-bottom: 16px; display: block; }
+  .welcome-title { font-size: 26px; font-weight: 700; color: var(--gold); line-height: 1.3; }
+  .welcome-sub { font-size: 15px; color: var(--gray); margin-top: 10px; line-height: 1.6; }
+  .member-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(201,168,76,0.15); border: 1px solid var(--gold);
+    border-radius: 30px; padding: 8px 18px; margin-top: 20px;
+    font-size: 14px; color: var(--gold-light);
+  }
+
+  /* ===== 表單元素 ===== */
+  .form-group { margin-bottom: 16px; }
+  .form-label { font-size: 13px; color: var(--gray); margin-bottom: 8px; display: block; }
+  .form-input {
+    width: 100%; background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 12px; padding: 14px 16px;
+    color: var(--white); font-size: 16px;
+    transition: border-color 0.2s;
+  }
+  .form-input:focus { outline: none; border-color: var(--gold); }
+  .form-input::placeholder { color: var(--gray); }
+  .form-hint { font-size: 12px; color: var(--gray); margin-top: 6px; }
+  .form-error { font-size: 12px; color: var(--danger); margin-top: 6px; display: none; }
+  .form-error.show { display: block; }
+
+  /* ===== 菜單品項 ===== */
+  .menu-grid { display: flex; flex-direction: column; gap: 12px; }
+  .menu-item {
+    background: var(--green-card);
+    border: 1px solid rgba(201,168,76,0.15);
+    border-radius: 14px; padding: 14px 16px;
+    display: flex; align-items: center; gap: 14px;
+    transition: border-color 0.2s;
+  }
+  .menu-item.selected { border-color: var(--gold); background: rgba(201,168,76,0.08); }
+  .item-emoji { font-size: 32px; flex-shrink: 0; width: 44px; text-align: center; }
+  .item-info { flex: 1; min-width: 0; }
+  .item-name { font-size: 15px; font-weight: 600; color: var(--white); }
+  .item-desc { font-size: 12px; color: var(--gray); margin-top: 3px; }
+  .item-price { font-size: 14px; color: var(--gold); font-weight: 700; margin-top: 4px; }
+  .qty-control { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .qty-btn {
+    width: 32px; height: 32px; border-radius: 50%;
+    border: 1px solid rgba(201,168,76,0.4);
+    background: transparent; color: var(--gold);
+    font-size: 20px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: background 0.2s;
+  }
+  .qty-btn:active { background: rgba(201,168,76,0.2); }
+  .qty-btn.minus:disabled { opacity: 0.3; cursor: default; }
+  .qty-num { font-size: 16px; font-weight: 700; color: var(--white); min-width: 20px; text-align: center; }
+
+  /* ===== 底部計算列 ===== */
+  .cart-bar {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+    background: var(--green-mid);
+    border-top: 1px solid rgba(201,168,76,0.3);
+    padding: 14px 20px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .cart-info { font-size: 14px; color: var(--gray); }
+  .cart-total { font-size: 20px; font-weight: 700; color: var(--gold); }
+  .cart-min-warn { font-size: 11px; color: var(--danger); margin-top: 2px; }
+
+  /* ===== 時段選擇 ===== */
+  .time-slots { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .time-slot {
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 12px; padding: 14px;
+    text-align: center; cursor: pointer;
+    background: rgba(255,255,255,0.03);
+    transition: all 0.2s; font-size: 15px; font-weight: 600;
+  }
+  .time-slot:active { transform: scale(0.97); }
+  .time-slot.selected { border-color: var(--gold); background: rgba(201,168,76,0.12); color: var(--gold); }
+  .time-slot .slot-label { font-size: 11px; color: var(--gray); margin-top: 4px; font-weight: 400; }
+
+  /* ===== 日期選擇 ===== */
+  .date-options { display: flex; gap: 10px; }
+  .date-option {
+    flex: 1; border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 12px; padding: 14px 12px;
+    text-align: center; cursor: pointer;
+    background: rgba(255,255,255,0.03);
+    transition: all 0.2s;
+  }
+  .date-option.selected { border-color: var(--gold); background: rgba(201,168,76,0.12); }
+  .date-option .date-day { font-size: 16px; font-weight: 700; }
+  .date-option .date-label { font-size: 12px; color: var(--gray); margin-top: 4px; }
+
+  /* ===== 訂單確認 ===== */
+  .order-item-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.07);
+  }
+  .order-item-row:last-child { border-bottom: none; }
+  .order-item-name { font-size: 14px; }
+  .order-item-qty { font-size: 13px; color: var(--gray); }
+  .order-item-subtotal { font-size: 14px; font-weight: 600; color: var(--gold); }
+  .order-divider { border: none; border-top: 1px solid rgba(201,168,76,0.2); margin: 14px 0; }
+  .order-total-row {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 18px; font-weight: 700;
+  }
+  .order-total-amount { color: var(--gold); font-size: 22px; }
+
+  /* ===== 地址輸入 ===== */
+  #address-autocomplete-container { position: relative; }
+  .pac-container {
+    background: var(--green-card) !important;
+    border: 1px solid var(--gold) !important;
+    border-radius: 12px !important; margin-top: 4px !important;
+    font-family: inherit !important; z-index: 9999 !important;
+  }
+  .pac-item {
+    padding: 12px 16px !important; color: var(--white) !important;
+    border-color: rgba(255,255,255,0.1) !important; cursor: pointer;
+  }
+  .pac-item:hover { background: rgba(201,168,76,0.1) !important; }
+  .pac-item-query { color: var(--white) !important; }
+
+  /* ===== 成功畫面 ===== */
+  .success-screen {
+    text-align: center; padding: 60px 20px;
+  }
+  .success-icon { font-size: 72px; margin-bottom: 20px; animation: bounce 0.5s ease; }
+  @keyframes bounce { 0%{transform:scale(0)} 80%{transform:scale(1.1)} 100%{transform:scale(1)} }
+  .success-title { font-size: 24px; font-weight: 700; color: var(--success); margin-bottom: 12px; }
+  .order-number-badge {
+    display: inline-block;
+    background: rgba(201,168,76,0.15); border: 1px solid var(--gold);
+    border-radius: 30px; padding: 10px 24px; margin: 16px 0;
+    font-size: 18px; font-weight: 700; color: var(--gold); letter-spacing: 2px;
+  }
+  .success-info { font-size: 15px; color: var(--gray); line-height: 1.8; }
+
+  /* ===== 主按鈕 ===== */
+  .btn-primary {
+    width: 100%; padding: 16px;
+    background: linear-gradient(135deg, var(--gold), #A07830);
+    border: none; border-radius: 14px;
+    color: var(--green-dark); font-size: 16px; font-weight: 700;
+    cursor: pointer; transition: all 0.2s; letter-spacing: 1px;
+  }
+  .btn-primary:active { transform: scale(0.98); opacity: 0.9; }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-secondary {
+    width: 100%; padding: 14px;
+    background: transparent; border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 14px; color: var(--white); font-size: 15px;
+    cursor: pointer; margin-top: 10px; transition: all 0.2s;
+  }
+  .btn-secondary:active { background: rgba(255,255,255,0.05); }
+
+  /* ===== 通知 ===== */
+  .toast {
+    position: fixed; top: 70px; left: 50%; transform: translateX(-50%);
+    background: var(--green-light); color: var(--white);
+    padding: 10px 20px; border-radius: 30px; font-size: 14px;
+    z-index: 999; opacity: 0; transition: opacity 0.3s; white-space: nowrap;
+  }
+  .toast.show { opacity: 1; }
+
+  /* ===== 資訊列 ===== */
+  .info-row {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.07);
+  }
+  .info-row:last-child { border-bottom: none; }
+  .info-icon { font-size: 18px; flex-shrink: 0; width: 28px; text-align: center; }
+  .info-label { font-size: 12px; color: var(--gray); margin-bottom: 3px; }
+  .info-value { font-size: 14px; color: var(--white); font-weight: 500; }
+</style>
+</head>
+<body>
+
+<!-- ===== 載入中 ===== -->
+<div id="screen-loading" class="screen active">
+  <div class="loading-logo">🚐</div>
+  <div class="loading-title">Air Bistro</div>
+  <div class="loading-sub">Feeling Bar 行動酒吧車正在啟動...</div>
+</div>
+
+<!-- ===== 頂部導覽 ===== -->
+<div class="top-bar" id="top-bar" style="display:none">
+  <div class="logo">Air <span>Bistro</span></div>
+  <div class="step-indicator" id="step-text">步驟 1 / 4</div>
+</div>
+
+<!-- ===== STEP 1: 會員驗證 ===== -->
+<div id="screen-verify" class="screen">
+  <div class="welcome-hero">
+    <span class="welcome-emoji">🥂</span>
+    <div class="welcome-title">歡迎使用<br>私人酒水到府服務</div>
+    <div class="welcome-sub">Feeling Bar 的摯友專屬<br>請輸入您的手機號碼完成驗證</div>
+  </div>
+  <div class="card">
+    <div class="card-title">會員驗證</div>
+    <div class="form-group">
+      <label class="form-label">手機號碼</label>
+      <input type="tel" id="input-phone" class="form-input" placeholder="09XX-XXX-XXX" maxlength="10">
+      <div class="form-hint">請輸入您加入 Feeling Bar 時登記的手機號碼</div>
+      <div class="form-error" id="error-phone">找不到此手機號碼的 Feeling Bar 會員資料，請確認後再試。</div>
+    </div>
+    <button class="btn-primary" id="btn-verify" onclick="verifyMember()">驗證會員身份</button>
+  </div>
+  <div style="text-align:center; margin-top:16px; font-size:13px; color:var(--gray);">
+    還不是 Feeling Bar 會員？<br>歡迎蒞臨 台北士林大南路110號 申辦
+  </div>
+</div>
+
+<!-- ===== STEP 2: 選擇品項 ===== -->
+<div id="screen-menu" class="screen">
+  <div class="card-title" style="margin-bottom:16px; font-size:16px; color:var(--white)">
+    🍹 選擇今晚的酒水
+  </div>
+  <div class="menu-grid" id="menu-grid">
+    <!-- 動態生成 -->
+  </div>
+  <div style="height:80px"></div>
+</div>
+
+<!-- ===== STEP 3: 配送資訊 ===== -->
+<div id="screen-address" class="screen">
+  <div class="card">
+    <div class="card-title">📅 選擇日期</div>
+    <div class="date-options" id="date-options">
+      <!-- 動態生成 -->
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">🕐 選擇時段</div>
+    <div class="time-slots" id="time-slots">
+      <div class="time-slot" data-slot="18:00-19:00" onclick="selectSlot(this)">
+        18:00 - 19:00<div class="slot-label">傍晚</div>
+      </div>
+      <div class="time-slot" data-slot="19:00-20:00" onclick="selectSlot(this)">
+        19:00 - 20:00<div class="slot-label">晚間</div>
+      </div>
+      <div class="time-slot" data-slot="20:00-21:00" onclick="selectSlot(this)">
+        20:00 - 21:00<div class="slot-label">夜間</div>
+      </div>
+      <div class="time-slot" data-slot="21:00-22:00" onclick="selectSlot(this)">
+        21:00 - 22:00<div class="slot-label">深夜</div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">📍 配送地址</div>
+    <div class="form-group">
+      <div id="address-autocomplete-container">
+        <input type="text" id="input-address" class="form-input" placeholder="請輸入您家的地址">
+      </div>
+      <div class="form-hint">⚠️ 我們目前服務範圍：大台北地區</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">📝 備注（選填）</div>
+    <textarea id="input-notes" class="form-input" rows="3" placeholder="例：請叫門鈴2聲、我在3樓、對花生過敏..."></textarea>
+  </div>
+  <button class="btn-primary" onclick="goToConfirm()" style="margin-bottom:20px">查看訂單確認 →</button>
+</div>
+
+<!-- ===== STEP 4: 確認訂單 ===== -->
+<div id="screen-confirm" class="screen">
+  <div class="card">
+    <div class="card-title">🛒 訂單品項</div>
+    <div id="confirm-items"><!-- 動態生成 --></div>
+    <hr class="order-divider">
+    <div class="order-total-row">
+      <span>合計</span>
+      <span class="order-total-amount" id="confirm-total">$0</span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">📋 配送資訊</div>
+    <div class="info-row">
+      <div class="info-icon">📅</div>
+      <div><div class="info-label">日期</div><div class="info-value" id="confirm-date">-</div></div>
+    </div>
+    <div class="info-row">
+      <div class="info-icon">🕐</div>
+      <div><div class="info-label">預計到達時段</div><div class="info-value" id="confirm-slot">-</div></div>
+    </div>
+    <div class="info-row">
+      <div class="info-icon">📍</div>
+      <div><div class="info-label">配送地址</div><div class="info-value" id="confirm-address">-</div></div>
+    </div>
+    <div class="info-row" id="confirm-notes-row" style="display:none">
+      <div class="info-icon">📝</div>
+      <div><div class="info-label">備注</div><div class="info-value" id="confirm-notes">-</div></div>
+    </div>
+  </div>
+  <div class="card" style="background:rgba(201,168,76,0.08); border-color:rgba(201,168,76,0.3)">
+    <div style="font-size:13px; color:var(--gold); font-weight:600; margin-bottom:8px">💳 付款方式</div>
+    <div style="font-size:14px; color:var(--white)">現場付現金</div>
+    <div style="font-size:12px; color:var(--gray); margin-top:6px">小李送達時，請準備 <strong style="color:var(--gold)" id="confirm-payment">$0</strong> 現金</div>
+  </div>
+  <button class="btn-primary" id="btn-submit" onclick="submitOrder()">✅ 確認預約</button>
+  <button class="btn-secondary" onclick="goToStep('address')">← 返回修改</button>
+</div>
+
+<!-- ===== SUCCESS: 預約成功 ===== -->
+<div id="screen-success" class="screen">
+  <div class="success-screen">
+    <div class="success-icon">✅</div>
+    <div class="success-title">預約成功！</div>
+    <div style="font-size:14px; color:var(--gray); margin-bottom:12px">您的訂單編號</div>
+    <div class="order-number-badge" id="success-order-number">AIR-000000-000</div>
+    <div class="success-info" id="success-info">
+      我們將在出發前 <strong style="color:var(--gold)">30 分鐘</strong> 透過 LINE 通知您<br><br>
+      小李預計於<br>
+      <strong style="color:var(--gold); font-size:18px" id="success-slot">-</strong><br>
+      抵達您家樓下<br><br>
+      <span style="color:var(--gray); font-size:13px">請準備好現金，謝謝 🙏</span>
+    </div>
+    <button class="btn-primary" onclick="resetApp()" style="margin-top:32px">返回首頁</button>
+  </div>
+</div>
+
+<!-- ===== 底部購物車列（菜單頁使用）===== -->
+<div class="cart-bar" id="cart-bar" style="display:none">
+  <div>
+    <div class="cart-info"><span id="cart-count">0</span> 項品項</div>
+    <div class="cart-min-warn" id="cart-warn">最低消費 $800（還差 $<span id="cart-gap">800</span>）</div>
+  </div>
+  <div style="display:flex; align-items:center; gap:16px">
+    <div class="cart-total">$<span id="cart-total-num">0</span></div>
+    <button class="btn-primary" id="btn-next-step" onclick="goToStep('address')"
+            style="width:auto; padding:12px 20px; font-size:14px" disabled>下一步 →</button>
+  </div>
+</div>
+
+<!-- ===== Toast 通知 ===== -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// 初始化
+// ============================================================
+const supabaseClient = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+
+// APP 狀態
+let state = {
+  lineUserId: null,
+  memberName: null,
+  memberPhone: null,
+  ocardTier: null,
+  isVerified: false,
+  cart: {},          // { itemId: qty }
+  menuItems: [],
+  selectedDate: null,
+  selectedSlot: null,
+  deliveryAddress: null,
+  deliveryLat: null,
+  deliveryLng: null,
+  notes: null,
+};
+
+// ============================================================
+// LIFF 初始化
+// ============================================================
+async function initApp() {
+  try {
+    await liff.init({ liffId: CONFIG.LIFF_ID });
+    if (!liff.isLoggedIn()) { liff.login(); return; }
+
+    const profile = await liff.getProfile();
+    state.lineUserId = profile.userId;
+    state.memberName = profile.displayName;
+
+    // 檢查是否已綁定
+    const { data: member } = await supabaseClient
+      .from('members').select('*').eq('line_user_id', state.lineUserId).single();
+
+    if (member && member.is_verified) {
+      state.memberName  = member.display_name || profile.displayName;
+      state.memberPhone = member.phone;
+      state.ocardTier   = member.member_tier;
+      state.isVerified  = true;
+      loadMenu();
+    } else {
+      showScreen('verify');
+    }
+  } catch (err) {
+    console.error('LIFF init error:', err);
+    // 開發模式：跳過 LIFF，直接進入
+    state.lineUserId = 'dev-user-' + Date.now();
+    state.memberName = '測試用戶';
+    showScreen('verify');
+  }
+}
+
+// ============================================================
+// 會員驗證
+// ============================================================
+async function verifyMember() {
+  const phone = document.getElementById('input-phone').value.replace(/[-\s]/g, '');
+  if (phone.length < 9) { showError('phone', '請輸入完整的手機號碼'); return; }
+
+  const btn = document.getElementById('btn-verify');
+  btn.disabled = true; btn.textContent = '驗證中...';
+
+  // 格式化（+886 或 09 開頭）
+  const phoneFormatted = phone.startsWith('09') ? phone : '0' + phone;
+  const phone886 = '+886' + phoneFormatted.substring(1);
+
+  const { data: member } = await supabaseClient
+    .from('members').select('*')
+    .or(`phone.eq.${phoneFormatted},phone.eq.${phone886}`)
+    .single();
+
+  if (!member) {
+    // 嘗試從 Ocard 資料對應（此處可擴充 Ocard API 串接）
+    showError('phone', '找不到此手機號碼的 Feeling Bar 會員資料。');
+    btn.disabled = false; btn.textContent = '驗證會員身份';
+    return;
+  }
+
+  // 綁定 LINE userId
+  await supabaseClient.from('members').update({
+    line_user_id: state.lineUserId,
+    display_name: state.memberName,
+    is_verified: true,
+    last_updated: new Date().toISOString()
+  }).eq('id', member.id);
+
+  state.memberPhone = member.phone || phoneFormatted;
+  state.ocardTier   = member.member_tier;
+  state.isVerified  = true;
+  showToast(`✅ 歡迎回來，${state.memberName}！`);
+  await loadMenu();
+}
+
+// ============================================================
+// 載入菜單
+// ============================================================
+async function loadMenu() {
+  const { data: items } = await supabaseClient
+    .from('menu_items').select('*').eq('is_available', true).order('display_order');
+
+  state.menuItems = items || [];
+  renderMenu();
+  goToStep('menu');
+}
+
+function renderMenu() {
+  const grid = document.getElementById('menu-grid');
+  grid.innerHTML = state.menuItems.map(item => `
+    <div class="menu-item" id="menu-item-${item.id}">
+      <div class="item-emoji">${item.emoji}</div>
+      <div class="item-info">
+        <div class="item-name">${item.name}</div>
+        <div class="item-desc">${item.description || ''}</div>
+        <div class="item-price">NTD $${item.price}</div>
+      </div>
+      <div class="qty-control">
+        <button class="qty-btn minus" onclick="changeQty('${item.id}', -1)" disabled>−</button>
+        <div class="qty-num" id="qty-${item.id}">0</div>
+        <button class="qty-btn" onclick="changeQty('${item.id}', 1)">+</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function changeQty(itemId, delta) {
+  const current = state.cart[itemId] || 0;
+  const newQty = Math.max(0, current + delta);
+  state.cart[itemId] = newQty;
+  if (newQty === 0) delete state.cart[itemId];
+
+  // 更新 UI
+  document.getElementById('qty-' + itemId).textContent = newQty;
+  const menuItem = document.getElementById('menu-item-' + itemId);
+  const minusBtn = menuItem.querySelector('.qty-btn.minus');
+  minusBtn.disabled = newQty === 0;
+  menuItem.classList.toggle('selected', newQty > 0);
+  updateCartBar();
+}
+
+function updateCartBar() {
+  const cartBar = document.getElementById('cart-bar');
+  const total = getCartTotal();
+  const count = Object.values(state.cart).reduce((a, b) => a + b, 0);
+
+  document.getElementById('cart-total-num').textContent = total;
+  document.getElementById('cart-count').textContent = count;
+
+  const gap = CONFIG.MIN_ORDER_AMOUNT - total;
+  const warn = document.getElementById('cart-warn');
+  const btn = document.getElementById('btn-next-step');
+
+  if (total >= CONFIG.MIN_ORDER_AMOUNT) {
+    warn.style.display = 'none';
+    btn.disabled = false;
+  } else {
+    warn.style.display = 'block';
+    document.getElementById('cart-gap').textContent = gap;
+    btn.disabled = true;
+  }
+}
+
+function getCartTotal() {
+  return state.menuItems.reduce((total, item) => {
+    return total + (item.price * (state.cart[item.id] || 0));
+  }, 0);
+}
+
+// ============================================================
+// 日期 & 時段選擇
+// ============================================================
+function renderDates() {
+  const container = document.getElementById('date-options');
+  const today = new Date();
+  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+
+  const fmt = (d) => d.toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', weekday: 'short' });
+
+  container.innerHTML = `
+    <div class="date-option selected" data-date="${today.toISOString().split('T')[0]}" onclick="selectDate(this)">
+      <div class="date-day">${fmt(today)}</div>
+      <div class="date-label">今天</div>
+    </div>
+    <div class="date-option" data-date="${tomorrow.toISOString().split('T')[0]}" onclick="selectDate(this)">
+      <div class="date-day">${fmt(tomorrow)}</div>
+      <div class="date-label">明天</div>
+    </div>
+  `;
+  state.selectedDate = today.toISOString().split('T')[0];
+}
+
+function selectDate(el) {
+  document.querySelectorAll('.date-option').forEach(e => e.classList.remove('selected'));
+  el.classList.add('selected');
+  state.selectedDate = el.dataset.date;
+}
+
+function selectSlot(el) {
+  document.querySelectorAll('.time-slot').forEach(e => e.classList.remove('selected'));
+  el.classList.add('selected');
+  state.selectedSlot = el.dataset.slot;
+}
+
+// ============================================================
+// 導航至確認頁
+// ============================================================
+function goToConfirm() {
+  const address = document.getElementById('input-address').value;
+  if (!state.selectedSlot) { showToast('⚠️ 請選擇配送時段'); return; }
+  if (!address || address.length < 5) { showToast('⚠️ 請輸入配送地址'); return; }
+
+  state.deliveryAddress = address;
+  state.notes = document.getElementById('input-notes').value;
+
+  // 填入確認頁
+  const items = getCartItems();
+  document.getElementById('confirm-items').innerHTML = items.map(i => `
+    <div class="order-item-row">
+      <div>
+        <div class="order-item-name">${i.emoji} ${i.name}</div>
+        <div class="order-item-qty">× ${i.qty}</div>
+      </div>
+      <div class="order-item-subtotal">$${i.subtotal}</div>
+    </div>
+  `).join('');
+
+  const total = getCartTotal();
+  document.getElementById('confirm-total').textContent = '$' + total;
+  document.getElementById('confirm-payment').textContent = '$' + total;
+  document.getElementById('confirm-date').textContent = state.selectedDate.replace(/-/g, '/');
+  document.getElementById('confirm-slot').textContent = state.selectedSlot;
+  document.getElementById('confirm-address').textContent = state.deliveryAddress;
+
+  if (state.notes) {
+    document.getElementById('confirm-notes').textContent = state.notes;
+    document.getElementById('confirm-notes-row').style.display = 'flex';
+  }
+
+  goToStep('confirm');
+}
+
+function getCartItems() {
+  return state.menuItems
+    .filter(item => state.cart[item.id] > 0)
+    .map(item => ({
+      id: item.id, name: item.name, emoji: item.emoji,
+      price: item.price, qty: state.cart[item.id],
+      subtotal: item.price * state.cart[item.id]
+    }));
+}
+
+// ============================================================
+// 提交訂單
+// ============================================================
+async function submitOrder() {
+  const btn = document.getElementById('btn-submit');
+  btn.disabled = true; btn.textContent = '提交中...';
+
+  try {
+    const items = getCartItems();
+    const total = getCartTotal();
+
+    // 生成訂單編號（在 client 端生成，後端有 trigger 做更精確的）
+    const now = new Date();
+    const datePart = now.toISOString().slice(2, 10).replace(/-/g, '');
+    const randPart = Math.floor(Math.random() * 900 + 100);
+    const orderNumber = `AIR-${datePart}-${randPart}`;
+
+    const { data: order, error } = await supabaseClient.from('orders').insert({
+      order_number:        orderNumber,
+      line_user_id:        state.lineUserId,
+      member_name:         state.memberName,
+      member_phone:        state.memberPhone || '',
+      items:               items,
+      total_amount:        total,
+      delivery_address:    state.deliveryAddress,
+      delivery_lat:        state.deliveryLat,
+      delivery_lng:        state.deliveryLng,
+      requested_date:      state.selectedDate,
+      requested_time_slot: state.selectedSlot,
+      member_notes:        state.notes,
+      status:              'pending'
+    }).select().single();
+
+    if (error) throw error;
+
+    // 通知 GAS（非同步，不等待）
+    notifyGAS(order);
+
+    // 顯示成功畫面
+    document.getElementById('success-order-number').textContent = order.order_number;
+    document.getElementById('success-slot').textContent = state.selectedSlot;
+    document.getElementById('top-bar').style.display = 'none';
+    document.getElementById('cart-bar').style.display = 'none';
+    showScreen('success');
+
+  } catch (err) {
+    console.error('Submit error:', err);
+    showToast('❌ 提交失敗，請再試一次');
+    btn.disabled = false; btn.textContent = '✅ 確認預約';
+  }
+}
+
+// 通知 GAS webhook（觸發 LINE 通知）
+async function notifyGAS(order) {
+  try {
+    await fetch(CONFIG.GAS_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'new_order', order })
+    });
+  } catch (e) { console.warn('GAS notify failed:', e); }
+}
+
+// ============================================================
+// 畫面切換
+// ============================================================
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + name).classList.add('active');
+}
+
+function goToStep(step) {
+  showScreen(step);
+  const topBar = document.getElementById('top-bar');
+  const cartBar = document.getElementById('cart-bar');
+  topBar.style.display = 'flex';
+
+  const steps = { verify: 0, menu: 1, address: 2, confirm: 3, success: 0 };
+  const stepNum = steps[step] || 0;
+  document.getElementById('step-text').textContent = stepNum > 0 ? `步驟 ${stepNum} / 4` : '';
+
+  cartBar.style.display = step === 'menu' ? 'flex' : 'none';
+  if (step === 'address') renderDates();
+  window.scrollTo(0, 0);
+}
+
+function resetApp() {
+  state.cart = {};
+  state.selectedDate = null; state.selectedSlot = null;
+  state.deliveryAddress = null; state.notes = null;
+  goToStep('menu');
+  document.getElementById('top-bar').style.display = 'flex';
+}
+
+// ============================================================
+// 工具函數
+// ============================================================
+function showError(field, msg) {
+  const el = document.getElementById('error-' + field);
+  if (el) { el.textContent = msg; el.classList.add('show'); }
+}
+function hideError(field) {
+  const el = document.getElementById('error-' + field);
+  if (el) el.classList.remove('show');
+}
+function showToast(msg, duration = 2500) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg; toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), duration);
+}
+
+// ============================================================
+// Google Maps 地址自動完成
+// ============================================================
+function initAutocomplete() {
+  const input = document.getElementById('input-address');
+  const autocomplete = new google.maps.places.Autocomplete(input, {
+    componentRestrictions: { country: 'tw' },
+    fields: ['formatted_address', 'geometry'],
+    types: ['address']
+  });
+  autocomplete.addListener('place_changed', () => {
+    const place = autocomplete.getPlace();
+    if (place.geometry) {
+      state.deliveryLat = place.geometry.location.lat();
+      state.deliveryLng = place.geometry.location.lng();
+      state.deliveryAddress = place.formatted_address;
+    }
+  });
+}
+
+// ============================================================
+// 啟動
+// ============================================================
+window.addEventListener('DOMContentLoaded', () => {
+  initApp();
+});
+</script>
+
+<!-- Google Maps Places API（在 Config 填好 Key 後取消註解）-->
+<script>
+// 動態載入 Google Maps
+function loadGoogleMaps() {
+  const script = document.createElement('script');
+  script.src = `https://maps.googleapis.com/maps/api/js?key=${CONFIG.GOOGLE_MAPS_API_KEY}&libraries=places&callback=initAutocomplete`;
+  script.async = true; script.defer = true;
+  document.head.appendChild(script);
+}
+// 在 initApp 成功後呼叫 loadGoogleMaps()
+</script>
+
+</body>
+</html>

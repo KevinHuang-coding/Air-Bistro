@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Air Bistro 管理後台</title>
+
+  <!-- Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Google Maps (loaded dynamically after config) -->
+
+  <style>
+    :root {
+      --green-dark:   #0D1F1A;
+      --green-mid:    #1B3A2D;
+      --green-light:  #1E3D2F;
+      --gold:         #C9A84C;
+      --gold-light:   #E8B84B;
+      --white:        #F5F5F0;
+      --gray:         #8A9E93;
+      --orange:       #E8943A;
+      --red:          #E05C5C;
+      --blue:         #4A9EE8;
+      --radius:       12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--green-dark);
+      color: var(--white);
+      font-family: -apple-system, 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ── LOGIN ─────────────────────────────────────────── */
+    #login-screen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .login-card {
+      background: var(--green-mid);
+      border: 1px solid rgba(201,168,76,0.3);
+      border-radius: 20px;
+      padding: 40px 36px;
+      width: 100%;
+      max-width: 380px;
+      text-align: center;
+    }
+
+    .login-logo { font-size: 48px; margin-bottom: 8px; }
+
+    .login-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--gold);
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+    }
+
+    .login-sub { font-size: 13px; color: var(--gray); margin-bottom: 32px; }
+
+    .login-input {
+      width: 100%;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(201,168,76,0.3);
+      border-radius: 10px;
+      color: var(--white);
+      font-size: 28px;
+      letter-spacing: 8px;
+      padding: 14px;
+      text-align: center;
+      outline: none;
+      margin-bottom: 16px;
+      transition: border-color 0.2s;
+    }
+
+    .login-input:focus { border-color: var(--gold); }
+    .login-input::placeholder { letter-spacing: 3px; font-size: 16px; color: var(--gray); }
+
+    .login-btn {
+      width: 100%;
+      background: var(--gold);
+      color: var(--green-dark);
+      border: none;
+      border-radius: 10px;
+      padding: 14px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .login-btn:hover { opacity: 0.9; }
+    .login-error { color: var(--red); font-size: 13px; margin-top: 12px; min-height: 20px; }
+
+    /* ── MAIN APP ─────────────────────────────────────── */
+    #app { display: none; flex-direction: column; min-height: 100vh; }
+
+    /* Header */
+    .header {
+      background: var(--green-mid);
+      border-bottom: 1px solid rgba(201,168,76,0.2);
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .header-left { display: flex; align-items: center; gap: 10px; }
+    .header-logo { font-size: 24px; }
+    .header-title { font-size: 16px; font-weight: 700; color: var(--gold); }
+    .header-date { font-size: 12px; color: var(--gray); }
+
+    .header-right { display: flex; align-items: center; gap: 12px; }
+
+    .driver-status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--gray);
+      display: inline-block;
+      margin-right: 4px;
+    }
+
+    .driver-status-dot.active { background: #4CAF50; animation: pulse 2s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .driver-status-label { font-size: 12px; color: var(--gray); }
+
+    .logout-btn {
+      background: transparent;
+      border: 1px solid rgba(201,168,76,0.3);
+      color: var(--gold);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    /* Stats Bar */
+    .stats-bar {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
+      background: rgba(255,255,255,0.05);
+      border-bottom: 1px solid rgba(201,168,76,0.1);
+    }
+
+    .stat-item {
+      background: var(--green-mid);
+      padding: 14px 16px;
+      text-align: center;
+    }
+
+    .stat-value { font-size: 24px; font-weight: 700; color: var(--gold); }
+    .stat-label { font-size: 11px; color: var(--gray); margin-top: 2px; }
+
+    /* Layout */
+    .main-layout {
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      flex: 1;
+      overflow: hidden;
+      height: calc(100vh - 112px);
+    }
+
+    /* Order Panel */
+    .order-panel {
+      background: var(--green-mid);
+      border-right: 1px solid rgba(201,168,76,0.1);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .panel-title { font-size: 14px; font-weight: 600; color: var(--white); }
+
+    .filter-tabs { display: flex; gap: 4px; }
+
+    .filter-tab {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.1);
+      color: var(--gray);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .filter-tab.active {
+      background: var(--gold);
+      border-color: var(--gold);
+      color: var(--green-dark);
+      font-weight: 600;
+    }
+
+    .order-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .order-list::-webkit-scrollbar { width: 4px; }
+    .order-list::-webkit-scrollbar-track { background: transparent; }
+    .order-list::-webkit-scrollbar-thumb { background: rgba(201,168,76,0.3); border-radius: 2px; }
+
+    /* Order Card */
+    .order-card {
+      background: var(--green-light);
+      border: 1px solid rgba(255,255,255,0.05);
+      border-radius: var(--radius);
+      padding: 14px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .order-card:hover { border-color: rgba(201,168,76,0.4); }
+    .order-card.selected { border-color: var(--gold); background: rgba(201,168,76,0.08); }
+
+    .order-card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .order-number { font-size: 13px; font-weight: 700; color: var(--gold); }
+
+    .status-chip {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 20px;
+    }
+
+    .status-pending    { background: rgba(138,158,147,0.2); color: var(--gray); }
+    .status-confirmed  { background: rgba(74,158,232,0.2);  color: var(--blue); }
+    .status-dispatched { background: rgba(232,148,58,0.2);  color: var(--orange); }
+    .status-en_route   { background: rgba(232,148,58,0.3);  color: var(--orange); }
+    .status-delivered  { background: rgba(76,175,80,0.2);   color: #4CAF50; }
+    .status-cancelled  { background: rgba(224,92,92,0.2);   color: var(--red); }
+
+    .order-member { font-size: 13px; color: var(--white); margin-bottom: 4px; }
+    .order-address { font-size: 12px; color: var(--gray); margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .order-card-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .order-time { font-size: 11px; color: var(--gray); }
+    .order-amount { font-size: 14px; font-weight: 700; color: var(--gold); }
+
+    /* Detail Panel (inside order panel) */
+    .detail-panel {
+      background: var(--green-dark);
+      border-top: 1px solid rgba(201,168,76,0.15);
+      padding: 16px;
+      max-height: 320px;
+      overflow-y: auto;
+      display: none;
+    }
+
+    .detail-panel.open { display: block; }
+
+    .detail-section { margin-bottom: 14px; }
+    .detail-label { font-size: 11px; color: var(--gray); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .detail-value { font-size: 13px; color: var(--white); }
+
+    .items-list { display: flex; flex-direction: column; gap: 4px; }
+
+    .item-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--white);
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .action-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    .action-btn {
+      flex: 1;
+      min-width: 80px;
+      padding: 9px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.2s;
+      text-align: center;
+    }
+
+    .action-btn:hover { opacity: 0.85; }
+    .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-confirm  { background: var(--blue); color: #fff; }
+    .btn-dispatch { background: var(--orange); color: #fff; }
+    .btn-enroute  { background: var(--gold); color: var(--green-dark); }
+    .btn-cancel   { background: rgba(224,92,92,0.2); color: var(--red); border: 1px solid rgba(224,92,92,0.3); }
+    .btn-nav      { background: rgba(255,255,255,0.1); color: var(--white); }
+
+    /* Route Optimizer */
+    .route-bar {
+      background: var(--green-mid);
+      border-top: 1px solid rgba(201,168,76,0.1);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .route-btn {
+      background: var(--gold);
+      color: var(--green-dark);
+      border: none;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: opacity 0.2s;
+    }
+
+    .route-btn:hover { opacity: 0.9; }
+    .route-info { font-size: 12px; color: var(--gray); flex: 1; }
+
+    /* Map Panel */
+    .map-panel { position: relative; }
+
+    #map { width: 100%; height: 100%; }
+
+    .map-overlay {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .map-btn {
+      background: var(--green-mid);
+      border: 1px solid rgba(201,168,76,0.3);
+      color: var(--white);
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 12px;
+      cursor: pointer;
+      backdrop-filter: blur(4px);
+      transition: all 0.2s;
+    }
+
+    .map-btn:hover { background: var(--green-light); border-color: var(--gold); }
+    .map-btn.active { background: var(--gold); color: var(--green-dark); border-color: var(--gold); font-weight: 700; }
+
+    /* Notification toast */
+    .toast-container {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .toast {
+      background: var(--green-mid);
+      border: 1px solid rgba(201,168,76,0.4);
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 13px;
+      max-width: 300px;
+      animation: slideIn 0.3s ease;
+    }
+
+    .toast.error { border-color: rgba(224,92,92,0.4); }
+    .toast.success { border-color: rgba(76,175,80,0.4); }
+
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to   { transform: translateX(0);   opacity: 1; }
+    }
+
+    /* Loading */
+    .loading-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(13,31,26,0.8);
+      z-index: 500;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .loading-overlay.show { display: flex; }
+    .spinner { width: 40px; height: 40px; border: 3px solid rgba(201,168,76,0.3); border-top-color: var(--gold); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { font-size: 14px; color: var(--gray); }
+
+    /* Empty state */
+    .empty-state { text-align: center; padding: 40px 20px; color: var(--gray); }
+    .empty-state-icon { font-size: 40px; margin-bottom: 12px; }
+    .empty-state-text { font-size: 14px; }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .main-layout { grid-template-columns: 1fr; }
+      .map-panel { display: none; }
+      .stats-bar { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════ LOGIN -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">🚐</div>
+    <div class="login-title">Air Bistro</div>
+    <div class="login-sub">管理後台 · Kevin 專用</div>
+    <input
+      id="pin-input"
+      class="login-input"
+      type="password"
+      inputmode="numeric"
+      maxlength="6"
+      placeholder="輸入密碼"
+      autocomplete="off"
+    />
+    <button class="login-btn" onclick="doLogin()">登入</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════ MAIN APP -->
+<div id="app">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <div class="header-logo">🚐</div>
+      <div>
+        <div class="header-title">Air Bistro 管理後台</div>
+        <div class="header-date" id="header-date"></div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div>
+        <span class="driver-status-dot" id="driver-dot"></span>
+        <span class="driver-status-label" id="driver-label">小李：未出勤</span>
+      </div>
+      <button class="logout-btn" onclick="doLogout()">登出</button>
+    </div>
+  </div>
+
+  <!-- Stats Bar -->
+  <div class="stats-bar">
+    <div class="stat-item">
+      <div class="stat-value" id="stat-total">0</div>
+      <div class="stat-label">今日訂單</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value" id="stat-pending">0</div>
+      <div class="stat-label">待處理</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value" id="stat-delivered">0</div>
+      <div class="stat-label">已送達</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value" id="stat-revenue">$0</div>
+      <div class="stat-label">今日營收</div>
+    </div>
+  </div>
+
+  <!-- Main Layout -->
+  <div class="main-layout">
+
+    <!-- Left: Order Panel -->
+    <div class="order-panel">
+      <div class="panel-header">
+        <div class="panel-title">今日訂單</div>
+        <div class="filter-tabs">
+          <button class="filter-tab active" onclick="setFilter('all', this)">全部</button>
+          <button class="filter-tab" onclick="setFilter('pending', this)">待確認</button>
+          <button class="filter-tab" onclick="setFilter('active', this)">進行中</button>
+          <button class="filter-tab" onclick="setFilter('delivered', this)">已送達</button>
+        </div>
+      </div>
+
+      <div class="order-list" id="order-list">
+        <div class="empty-state">
+          <div class="empty-state-icon">📋</div>
+          <div class="empty-state-text">載入訂單中...</div>
+        </div>
+      </div>
+
+      <!-- Order Detail Panel -->
+      <div class="detail-panel" id="detail-panel">
+        <!-- populated by JS -->
+      </div>
+
+      <!-- Route Optimizer -->
+      <div class="route-bar">
+        <button class="route-btn" onclick="optimizeRoute()">🗺️ 一鍵路線規劃</button>
+        <div class="route-info" id="route-info">選取訂單後點擊，自動計算最優路線</div>
+      </div>
+    </div>
+
+    <!-- Right: Map Panel -->
+    <div class="map-panel">
+      <div id="map"></div>
+      <div class="map-overlay">
+        <button class="map-btn" id="btn-track" onclick="toggleTracking()">📍 追蹤小李</button>
+        <button class="map-btn" onclick="fitAllMarkers()">🔭 全覽地圖</button>
+        <button class="map-btn" onclick="refreshOrders()">🔄 重新整理</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loading-overlay">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loading-text">處理中...</div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════
+//  CONFIG — 填入您的設定值
+// ══════════════════════════════════════════════════════════
+const CONFIG = {
+  ADMIN_PASSWORD:      '0000',                    // 管理後台登入密碼（請自行更改）
+  SUPABASE_URL:        'https://XXXXX.supabase.co',
+  SUPABASE_ANON_KEY:   'eyJhbGci...',
+  GOOGLE_MAPS_API_KEY: 'AIzaSy...',
+  GAS_WEBHOOK_URL:     'https://script.google.com/macros/s/AKfycbyv0DD70lX0wsTCoxSaJ6AVdEW1cYL2BfyVEX2ESwHQBX2r1pagqu2f9vPYBnfKsa1m/exec',  // ✅ 已填入 2026-05-14
+  DEFAULT_CENTER:      { lat: 25.0330, lng: 121.5654 },  // 台北市中心（依酒吧車活動範圍調整）
+};
+
+// ══════════════════════════════════════════════════════════
+//  State
+// ══════════════════════════════════════════════════════════
+let supabase = null;
+let map = null;
+let markers = {};         // orderId → google.maps.Marker
+let driverMarker = null;
+let routeRenderer = null;
+let allOrders = [];
+let selectedOrderId = null;
+let currentFilter = 'all';
+let trackingEnabled = false;
+let realtimeChannel = null;
+
+// ══════════════════════════════════════════════════════════
+//  LOGIN
+// ══════════════════════════════════════════════════════════
+function doLogin() {
+  const val = document.getElementById('pin-input').value.trim();
+  if (val === CONFIG.ADMIN_PASSWORD) {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    initApp();
+  } else {
+    document.getElementById('login-error').textContent = '密碼錯誤，請再試一次';
+    document.getElementById('pin-input').value = '';
+    setTimeout(() => { document.getElementById('login-error').textContent = ''; }, 3000);
+  }
+}
+
+document.getElementById('pin-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+
+function doLogout() {
+  if (realtimeChannel) supabase.removeChannel(realtimeChannel);
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('pin-input').value = '';
+  allOrders = [];
+  selectedOrderId = null;
+}
+
+// ══════════════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════════════
+async function initApp() {
+  // Date header
+  const now = new Date();
+  document.getElementById('header-date').textContent =
+    now.toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+
+  // Supabase
+  supabase = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+
+  // Load Maps then fetch data
+  await loadGoogleMaps();
+  await refreshOrders();
+  startRealtime();
+  pollDriverLocation();
+}
+
+function loadGoogleMaps() {
+  return new Promise(resolve => {
+    if (window.google && window.google.maps) { initMap(); resolve(); return; }
+    window.__mapsCallback = () => { initMap(); resolve(); };
+    const s = document.createElement('script');
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${CONFIG.GOOGLE_MAPS_API_KEY}&libraries=places&callback=__mapsCallback`;
+    s.async = true;
+    document.head.appendChild(s);
+  });
+}
+
+function initMap() {
+  map = new google.maps.Map(document.getElementById('map'), {
+    center: CONFIG.DEFAULT_CENTER,
+    zoom: 13,
+    mapTypeId: 'roadmap',
+    styles: [
+      { elementType: 'geometry',        stylers: [{ color: '#1d2c4d' }] },
+      { elementType: 'labels.text.fill',stylers: [{ color: '#8ec3b9' }] },
+      { featureType: 'road',            elementType: 'geometry',          stylers: [{ color: '#304a7d' }] },
+      { featureType: 'road',            elementType: 'labels.text.fill',  stylers: [{ color: '#98a5be' }] },
+      { featureType: 'water',           elementType: 'geometry',          stylers: [{ color: '#0e1626' }] },
+      { featureType: 'poi',             stylers: [{ visibility: 'off' }] },
+    ],
+  });
+  routeRenderer = new google.maps.DirectionsRenderer({
+    map,
+    suppressMarkers: true,
+    polylineOptions: { strokeColor: '#C9A84C', strokeWeight: 4, strokeOpacity: 0.8 },
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+//  DATA
+// ══════════════════════════════════════════════════════════
+async function refreshOrders() {
+  if (!supabase) return;
+  const today = new Date().toISOString().split('T')[0];
+  const { data, error } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('requested_date', today)
+    .neq('status', 'cancelled')
+    .order('requested_time_slot', { ascending: true });
+
+  if (error) { toast('載入訂單失敗：' + error.message, 'error'); return; }
+  allOrders = data || [];
+  renderOrderList();
+  updateStats();
+  updateMapMarkers();
+}
+
+// ══════════════════════════════════════════════════════════
+//  RENDER ORDER LIST
+// ══════════════════════════════════════════════════════════
+function setFilter(f, el) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  renderOrderList();
+}
+
+function getFilteredOrders() {
+  if (currentFilter === 'all') return allOrders;
+  if (currentFilter === 'pending') return allOrders.filter(o => o.status === 'pending');
+  if (currentFilter === 'active') return allOrders.filter(o => ['confirmed','dispatched','en_route'].includes(o.status));
+  if (currentFilter === 'delivered') return allOrders.filter(o => o.status === 'delivered');
+  return allOrders;
+}
+
+const STATUS_LABEL = {
+  pending:    '待確認',
+  confirmed:  '已確認',
+  dispatched: '已派單',
+  en_route:   '配送中',
+  delivered:  '已送達',
+  cancelled:  '已取消',
+};
+
+function renderOrderList() {
+  const list = document.getElementById('order-list');
+  const orders = getFilteredOrders();
+  if (!orders.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🎉</div><div class="empty-state-text">目前沒有訂單</div></div>`;
+    return;
+  }
+  list.innerHTML = orders.map(o => `
+    <div class="order-card ${o.id === selectedOrderId ? 'selected' : ''}" onclick="selectOrder('${o.id}')">
+      <div class="order-card-top">
+        <div class="order-number">${o.order_number}</div>
+        <div class="status-chip status-${o.status}">${STATUS_LABEL[o.status] || o.status}</div>
+      </div>
+      <div class="order-member">👤 ${o.member_name} · 📱 ${o.member_phone}</div>
+      <div class="order-address">📍 ${o.delivery_address}</div>
+      <div class="order-card-bottom">
+        <div class="order-time">⏰ ${o.requested_time_slot}</div>
+        <div class="order-amount">$${o.total_amount}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ══════════════════════════════════════════════════════════
+//  ORDER DETAIL
+// ══════════════════════════════════════════════════════════
+function selectOrder(orderId) {
+  selectedOrderId = orderId;
+  renderOrderList();
+
+  const order = allOrders.find(o => o.id === orderId);
+  if (!order) return;
+
+  // Center map on order
+  if (map && order.delivery_lat && order.delivery_lng) {
+    map.panTo({ lat: parseFloat(order.delivery_lat), lng: parseFloat(order.delivery_lng) });
+    map.setZoom(15);
+  }
+
+  renderDetailPanel(order);
+}
+
+function renderDetailPanel(order) {
+  const panel = document.getElementById('detail-panel');
+  panel.classList.add('open');
+
+  const items = Array.isArray(order.items) ? order.items : JSON.parse(order.items || '[]');
+  const itemsHtml = items.map(i =>
+    `<div class="item-row"><span>${i.name} ×${i.qty}</span><span>$${i.subtotal}</span></div>`
+  ).join('');
+
+  const eta = order.estimated_arrival
+    ? new Date(order.estimated_arrival).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })
+    : '未設定';
+
+  const mapsUrl = `https://maps.google.com/?q=${encodeURIComponent(order.delivery_address)}`;
+
+  // Action buttons based on current status
+  let actionHtml = '';
+  if (order.status === 'pending') {
+    actionHtml = `
+      <button class="action-btn btn-confirm" onclick="updateOrderStatus('${order.id}', 'confirmed')">✅ 確認訂單</button>
+      <button class="action-btn btn-cancel"  onclick="cancelOrder('${order.id}')">✗ 取消</button>
+    `;
+  } else if (order.status === 'confirmed') {
+    actionHtml = `
+      <button class="action-btn btn-dispatch" onclick="dispatchOrder('${order.id}')">🚐 派單給小李</button>
+      <button class="action-btn btn-nav"      onclick="window.open('${mapsUrl}', '_blank')">🗺️ 導航</button>
+    `;
+  } else if (order.status === 'dispatched') {
+    actionHtml = `
+      <button class="action-btn btn-enroute" onclick="sendEnRouteNotification('${order.id}')">🔔 發送即將抵達</button>
+      <button class="action-btn btn-nav"     onclick="window.open('${mapsUrl}', '_blank')">🗺️ 導航</button>
+    `;
+  } else if (order.status === 'en_route') {
+    actionHtml = `
+      <button class="action-btn btn-enroute" onclick="sendEnRouteNotification('${order.id}')">🔔 再次提醒會員</button>
+      <button class="action-btn btn-nav"     onclick="window.open('${mapsUrl}', '_blank')">🗺️ 導航</button>
+    `;
+  } else if (order.status === 'delivered') {
+    actionHtml = `<button class="action-btn btn-nav" onclick="window.open('${mapsUrl}', '_blank')">🗺️ 查看地址</button>`;
+  }
+
+  panel.innerHTML = `
+    <div class="detail-section">
+      <div class="detail-label">訂單資訊</div>
+      <div class="detail-value">${order.order_number} · ⏰ ${order.requested_time_slot}</div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-label">會員</div>
+      <div class="detail-value">👤 ${order.member_name} · 📱 ${order.member_phone}</div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-label">送達地址</div>
+      <div class="detail-value">📍 ${order.delivery_address}</div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-label">品項</div>
+      <div class="items-list">${itemsHtml}</div>
+      <div style="text-align:right;font-size:14px;font-weight:700;color:var(--gold);margin-top:6px;">合計 $${order.total_amount}</div>
+    </div>
+    ${order.member_notes ? `
+    <div class="detail-section">
+      <div class="detail-label">會員備注</div>
+      <div class="detail-value" style="color:var(--orange);">📝 ${order.member_notes}</div>
+    </div>` : ''}
+    ${order.admin_notes ? `
+    <div class="detail-section">
+      <div class="detail-label">後台備注</div>
+      <div class="detail-value">${order.admin_notes}</div>
+    </div>` : ''}
+    <div class="detail-section">
+      <div class="detail-label">預估到達</div>
+      <div class="detail-value">${eta}</div>
+    </div>
+    <div class="detail-section">
+      <div class="action-buttons">${actionHtml}</div>
+    </div>
+  `;
+}
+
+// ══════════════════════════════════════════════════════════
+//  ORDER ACTIONS
+// ══════════════════════════════════════════════════════════
+async function updateOrderStatus(orderId, newStatus, extraFields = {}) {
+  showLoading('更新訂單狀態...');
+  const { error } = await supabase
+    .from('orders')
+    .update({ status: newStatus, last_updated: new Date().toISOString(), ...extraFields })
+    .eq('id', orderId);
+  hideLoading();
+
+  if (error) { toast('更新失敗：' + error.message, 'error'); return false; }
+  await refreshOrders();
+  // Re-select to update detail panel
+  const order = allOrders.find(o => o.id === orderId);
+  if (order) renderDetailPanel(order);
+  return true;
+}
+
+async function cancelOrder(orderId) {
+  if (!confirm('確定要取消此訂單嗎？')) return;
+  await updateOrderStatus(orderId, 'cancelled');
+  document.getElementById('detail-panel').classList.remove('open');
+  selectedOrderId = null;
+  toast('訂單已取消', 'error');
+}
+
+async function dispatchOrder(orderId) {
+  const order = allOrders.find(o => o.id === orderId);
+  if (!order) return;
+
+  // Ask for ETA
+  const etaStr = prompt('預估抵達時間（例：20:30）：');
+  if (!etaStr) return;
+
+  const today = new Date();
+  const [h, m] = etaStr.split(':').map(Number);
+  const eta = new Date(today.getFullYear(), today.getMonth(), today.getDate(), h, m);
+
+  showLoading('派單中...');
+  const ok = await updateOrderStatus(orderId, 'dispatched', {
+    dispatched_at: new Date().toISOString(),
+    estimated_arrival: eta.toISOString(),
+  });
+  if (!ok) return;
+
+  // Trigger GAS LINE notifications (async, non-blocking)
+  const orderWithEta = { ...order, status: 'dispatched', estimated_arrival: eta.toISOString() };
+  callGAS('dispatched', orderWithEta);
+
+  hideLoading();
+  toast('✅ 已派單，LINE 通知已發送給小李和會員');
+}
+
+async function sendEnRouteNotification(orderId) {
+  const order = allOrders.find(o => o.id === orderId);
+  if (!order) return;
+
+  if (order.status === 'dispatched') {
+    await updateOrderStatus(orderId, 'en_route');
+  }
+
+  callGAS('en_route', order);
+  toast('🔔 已發送「即將抵達」通知給會員');
+}
+
+// ══════════════════════════════════════════════════════════
+//  GAS / LINE NOTIFICATIONS
+// ══════════════════════════════════════════════════════════
+function callGAS(type, order) {
+  if (!CONFIG.GAS_WEBHOOK_URL || CONFIG.GAS_WEBHOOK_URL.includes('...')) {
+    console.log('GAS not configured, skipping notification');
+    return;
+  }
+  fetch(CONFIG.GAS_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type, order }),
+  }).catch(err => console.warn('GAS call failed:', err));
+}
+
+// ══════════════════════════════════════════════════════════
+//  STATS
+// ══════════════════════════════════════════════════════════
+function updateStats() {
+  const total = allOrders.length;
+  const pending = allOrders.filter(o => ['pending', 'confirmed'].includes(o.status)).length;
+  const delivered = allOrders.filter(o => o.status === 'delivered').length;
+  const revenue = allOrders
+    .filter(o => o.status !== 'cancelled')
+    .reduce((sum, o) => sum + (o.total_amount || 0), 0);
+
+  document.getElementById('stat-total').textContent = total;
+  document.getElementById('stat-pending').textContent = pending;
+  document.getElementById('stat-delivered').textContent = delivered;
+  document.getElementById('stat-revenue').textContent = '$' + revenue.toLocaleString();
+}
+
+// ══════════════════════════════════════════════════════════
+//  MAP MARKERS
+// ══════════════════════════════════════════════════════════
+const STATUS_COLOR = {
+  pending: '#8A9E93', confirmed: '#4A9EE8', dispatched: '#E8943A',
+  en_route: '#E8943A', delivered: '#4CAF50',
+};
+
+function updateMapMarkers() {
+  if (!map) return;
+
+  // Remove old markers
+  Object.values(markers).forEach(m => m.setMap(null));
+  markers = {};
+
+  allOrders.forEach((order, idx) => {
+    if (!order.delivery_lat || !order.delivery_lng) return;
+
+    const color = STATUS_COLOR[order.status] || '#8A9E93';
+    const marker = new google.maps.Marker({
+      position: { lat: parseFloat(order.delivery_lat), lng: parseFloat(order.delivery_lng) },
+      map,
+      title: `${order.order_number} · ${order.member_name}`,
+      label: {
+        text: String(idx + 1),
+        color: '#0D1F1A',
+        fontWeight: 'bold',
+        fontSize: '12px',
+      },
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        fillColor: color,
+        fillOpacity: 1,
+        strokeColor: '#0D1F1A',
+        strokeWeight: 2,
+        scale: 16,
+      },
+    });
+
+    marker.addListener('click', () => selectOrder(order.id));
+    markers[order.id] = marker;
+  });
+}
+
+function fitAllMarkers() {
+  if (!map) return;
+  const bounds = new google.maps.LatLngBounds();
+  let hasPoints = false;
+  Object.values(markers).forEach(m => { bounds.extend(m.getPosition()); hasPoints = true; });
+  if (driverMarker) { bounds.extend(driverMarker.getPosition()); hasPoints = true; }
+  if (hasPoints) map.fitBounds(bounds);
+}
+
+// ══════════════════════════════════════════════════════════
+//  DRIVER TRACKING
+// ══════════════════════════════════════════════════════════
+async function pollDriverLocation() {
+  await fetchDriverLocation();
+  setInterval(fetchDriverLocation, 15000); // poll every 15s
+}
+
+async function fetchDriverLocation() {
+  if (!supabase) return;
+  const { data, error } = await supabase
+    .from('drivers')
+    .select('name, is_active, current_lat, current_lng, last_location_update')
+    .limit(1)
+    .single();
+
+  if (error || !data) return;
+
+  const dot = document.getElementById('driver-dot');
+  const label = document.getElementById('driver-label');
+
+  if (data.is_active) {
+    dot.classList.add('active');
+    const lastUpdate = data.last_location_update
+      ? new Date(data.last_location_update).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      : '--';
+    label.textContent = `小李：出勤中 · ${lastUpdate}`;
+
+    if (map && data.current_lat && data.current_lng) {
+      const pos = { lat: parseFloat(data.current_lat), lng: parseFloat(data.current_lng) };
+
+      if (!driverMarker) {
+        driverMarker = new google.maps.Marker({
+          position: pos,
+          map,
+          title: '小李（司機）',
+          icon: {
+            url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+              <svg width="36" height="36" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="18" cy="18" r="16" fill="#C9A84C" stroke="#0D1F1A" stroke-width="2"/>
+                <text x="18" y="23" text-anchor="middle" font-size="16" fill="#0D1F1A">🚐</text>
+              </svg>
+            `),
+            scaledSize: new google.maps.Size(36, 36),
+            anchor: new google.maps.Point(18, 18),
+          },
+          zIndex: 100,
+        });
+      } else {
+        driverMarker.setPosition(pos);
+      }
+
+      if (trackingEnabled) map.panTo(pos);
+    }
+  } else {
+    dot.classList.remove('active');
+    label.textContent = '小李：未出勤';
+    if (driverMarker) { driverMarker.setMap(null); driverMarker = null; }
+  }
+}
+
+function toggleTracking() {
+  trackingEnabled = !trackingEnabled;
+  const btn = document.getElementById('btn-track');
+  btn.classList.toggle('active', trackingEnabled);
+  btn.textContent = trackingEnabled ? '📍 追蹤中' : '📍 追蹤小李';
+  if (trackingEnabled && driverMarker) map.panTo(driverMarker.getPosition());
+}
+
+// ══════════════════════════════════════════════════════════
+//  ROUTE OPTIMIZATION
+// ══════════════════════════════════════════════════════════
+async function optimizeRoute() {
+  if (!map) { toast('地圖尚未載入', 'error'); return; }
+
+  const activeOrders = allOrders.filter(o =>
+    ['confirmed', 'dispatched', 'en_route'].includes(o.status) &&
+    o.delivery_lat && o.delivery_lng
+  );
+
+  if (activeOrders.length < 2) {
+    toast('至少需要 2 筆進行中訂單才能規劃路線', 'error');
+    return;
+  }
+
+  showLoading('計算最優路線...');
+
+  const origin = driverMarker
+    ? driverMarker.getPosition()
+    : CONFIG.DEFAULT_CENTER;
+
+  const waypoints = activeOrders.map(o => ({
+    location: new google.maps.LatLng(parseFloat(o.delivery_lat), parseFloat(o.delivery_lng)),
+    stopover: true,
+  }));
+
+  const destination = waypoints.pop().location;
+
+  const service = new google.maps.DirectionsService();
+  service.route({
+    origin,
+    destination,
+    waypoints,
+    optimizeWaypoints: true,
+    travelMode: google.maps.TravelMode.DRIVING,
+  }, (result, status) => {
+    hideLoading();
+    if (status !== 'OK') { toast('路線計算失敗：' + status, 'error'); return; }
+
+    routeRenderer.setDirections(result);
+
+    // Display route info
+    const route = result.routes[0];
+    const totalDuration = route.legs.reduce((sum, leg) => sum + leg.duration.value, 0);
+    const totalDistance = route.legs.reduce((sum, leg) => sum + leg.distance.value, 0);
+    const minutes = Math.ceil(totalDuration / 60);
+    const km = (totalDistance / 1000).toFixed(1);
+
+    const order = route.waypoint_order;
+    const routeDesc = order.map((i, seq) =>
+      `第${seq + 1}站：${activeOrders[i].member_name}`
+    ).join(' → ');
+
+    document.getElementById('route-info').textContent =
+      `⏱️ ${minutes} 分鐘 · ${km} km · ${routeDesc}`;
+
+    toast(`✅ 路線規劃完成！總計 ${minutes} 分鐘，${km} 公里`);
+
+    // Calculate ETA for each stop and update Supabase
+    const now = new Date();
+    let elapsed = 0;
+    route.waypoint_order.forEach((waypointIdx, seq) => {
+      elapsed += route.legs[seq].duration.value;
+      const eta = new Date(now.getTime() + elapsed * 1000);
+      const order = activeOrders[waypointIdx];
+      supabase
+        .from('orders')
+        .update({ estimated_arrival: eta.toISOString(), last_updated: new Date().toISOString() })
+        .eq('id', order.id)
+        .then(() => {});
+    });
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+//  REALTIME SUBSCRIPTIONS
+// ══════════════════════════════════════════════════════════
+function startRealtime() {
+  if (!supabase) return;
+  realtimeChannel = supabase
+    .channel('admin-realtime')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+      refreshOrders();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, () => {
+      fetchDriverLocation();
+    })
+    .subscribe();
+}
+
+// ══════════════════════════════════════════════════════════
+//  UI HELPERS
+// ══════════════════════════════════════════════════════════
+function toast(msg, type = 'success') {
+  const container = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  container.appendChild(el);
+  setTimeout(() => { el.remove(); }, 4000);
+}
+
+function showLoading(msg = '處理中...') {
+  document.getElementById('loading-text').textContent = msg;
+  document.getElementById('loading-overlay').classList.add('show');
+}
+
+function hideLoading() {
+  document.getElementById('loading-overlay').classList.remove('show');
+}
+</script>
+</body>
+</html>
