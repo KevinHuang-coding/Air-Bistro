@@ -447,7 +447,7 @@
   <div class="login-card">
     <div class="login-logo">🚐</div>
     <div class="login-title">Air Bistro</div>
-    <div class="login-sub">管理後台 · Kevin 專用</div>
+    <div class="login-sub" id="login-sub">請輸入密碼登入</div>
     <input
       id="pin-input"
       class="login-input"
@@ -564,10 +564,13 @@
 //  CONFIG — 填入您的設定值
 // ══════════════════════════════════════════════════════════
 const CONFIG = {
-  ADMIN_PASSWORD:      '0000',                    // 管理後台登入密碼（請自行更改）
+  ACCOUNTS: {
+    'Kevin執行長':  '050916',   // Kevin 完整管理員
+    '配送人員小李': '888888',   // 小李 配送員（可查看訂單＋導航，不可修改訂單狀態）
+  },
   SUPABASE_URL:        'https://meocathzmwumwewoolok.supabase.co',  // ✅ 已填入 2026-05-14
   SUPABASE_ANON_KEY:   'sb_publishable_L6jpxXTz1Vjzy-Y60xVBVQ_IHnpT4_a',  // ✅ 已填入 2026-05-14
-  GOOGLE_MAPS_API_KEY: 'AIzaSy...',
+  GOOGLE_MAPS_API_KEY: 'AIzaSyDGtHWZrJgyWcmpAq7pLtijN1V5o8rIgzw',
   GAS_WEBHOOK_URL:     'https://script.google.com/macros/s/AKfycbyv0DD70lX0wsTCoxSaJ6AVdEW1cYL2BfyVEX2ESwHQBX2r1pagqu2f9vPYBnfKsa1m/exec',  // ✅ 已填入 2026-05-14
   DEFAULT_CENTER:      { lat: 25.0330, lng: 121.5654 },  // 台北市中心（依酒吧車活動範圍調整）
 };
@@ -585,21 +588,27 @@ let selectedOrderId = null;
 let currentFilter = 'all';
 let trackingEnabled = false;
 let realtimeChannel = null;
+let currentRole = null;   // 'kevin' | 'xiaoli'
 
 // ══════════════════════════════════════════════════════════
 //  LOGIN
 // ══════════════════════════════════════════════════════════
 function doLogin() {
   const val = document.getElementById('pin-input').value.trim();
-  if (val === CONFIG.ADMIN_PASSWORD) {
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('app').style.display = 'flex';
-    initApp();
+  const accounts = CONFIG.ACCOUNTS;
+  if (val === accounts['Kevin執行長']) {
+    currentRole = 'kevin';
+  } else if (val === accounts['配送人員小李']) {
+    currentRole = 'xiaoli';
   } else {
     document.getElementById('login-error').textContent = '密碼錯誤，請再試一次';
     document.getElementById('pin-input').value = '';
     setTimeout(() => { document.getElementById('login-error').textContent = ''; }, 3000);
+    return;
   }
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  initApp();
 }
 
 document.getElementById('pin-input').addEventListener('keydown', e => {
@@ -613,12 +622,41 @@ function doLogout() {
   document.getElementById('pin-input').value = '';
   allOrders = [];
   selectedOrderId = null;
+  currentRole = null;
+}
+
+// ══════════════════════════════════════════════════════════
+//  ROLE-BASED UI
+// ══════════════════════════════════════════════════════════
+function applyRoleUI() {
+  const isKevin = currentRole === 'kevin';
+  const isXiaoli = currentRole === 'xiaoli';
+
+  // Header title
+  const titleEl = document.querySelector('.header-title');
+  if (titleEl) titleEl.textContent = isXiaoli ? 'Air Bistro 配送員檢視' : 'Air Bistro 管理後台';
+
+  // Hide management-only elements for 小李
+  const mgmtOnly = [
+    document.querySelector('.route-bar'),   // 一鍵路線規劃
+    document.getElementById('stat-revenue'), // 營業額
+    document.getElementById('stat-revenue')?.closest('.stat-card'),
+  ];
+  mgmtOnly.forEach(el => { if (el) el.style.display = isXiaoli ? 'none' : ''; });
+
+  // Filter tabs: 小李 only sees active + delivered
+  if (isXiaoli) {
+    document.querySelector('.filter-tab[onclick*="pending"]')?.setAttribute('style', 'display:none');
+    setFilter('active', document.querySelector('.filter-tab[onclick*="active"]'));
+  }
 }
 
 // ══════════════════════════════════════════════════════════
 //  INIT
-// ══════════════════════════════════════════════════════════
 async function initApp() {
+  // Role-based UI
+  applyRoleUI();
+
   // Date header
   const now = new Date();
   document.getElementById('header-date').textContent =
