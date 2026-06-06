@@ -11,7 +11,7 @@
     SUPABASE_URL:      'https://meocathzmwumwewoolok.supabase.co',  // ✅ 已填入 2026-05-14
     SUPABASE_ANON_KEY: 'sb_publishable_L6jpxXTz1Vjzy-Y60xVBVQ_IHnpT4_a',  // ✅ 已填入 2026-05-14
     GAS_WEBHOOK_URL:   'https://script.google.com/macros/s/AKfycbyv0DD70lX0wsTCoxSaJ6AVdEW1cYL2BfyVEX2ESwHQBX2r1pagqu2f9vPYBnfKsa1m/exec',  // ✅ 已填入 2026-05-14
-    DRIVER_PIN:        '8888',   // 預設 PIN，可在 Supabase drivers 表修改
+    DRIVER_PIN:        '888888', // 預設 PIN，可在 Supabase drivers 表修改
     GPS_INTERVAL_MS:   30000,    // 每 30 秒回傳一次 GPS
   };
 </script>
@@ -150,6 +150,8 @@
     <div class="pin-dot" id="dot-1"></div>
     <div class="pin-dot" id="dot-2"></div>
     <div class="pin-dot" id="dot-3"></div>
+    <div class="pin-dot" id="dot-4"></div>
+    <div class="pin-dot" id="dot-5"></div>
   </div>
   <div class="pin-pad">
     <button class="pin-btn" onclick="inputPin('1')">1</button>
@@ -223,17 +225,17 @@ let pinBuffer = '';
 // PIN 登入
 // ============================================================
 function inputPin(digit) {
-  if (pinBuffer.length >= 4) return;
+  if (pinBuffer.length >= 6) return;
   pinBuffer += digit;
   updatePinDots();
-  if (pinBuffer.length === 4) setTimeout(checkPin, 100);
+  if (pinBuffer.length === 6) setTimeout(checkPin, 100);
 }
 
 function backspacePin() { pinBuffer = pinBuffer.slice(0, -1); updatePinDots(); }
 function clearPin()     { pinBuffer = ''; updatePinDots(); }
 
 function updatePinDots() {
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 6; i++) {
     document.getElementById('dot-' + i).classList.toggle('filled', i < pinBuffer.length);
   }
 }
