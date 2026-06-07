@@ -69,10 +69,11 @@
 
   /* ===== 載入畫面 ===== */
   #screen-loading {
-    display: flex; flex-direction: column;
+    flex-direction: column;
     align-items: center; justify-content: center;
     min-height: 100vh; padding: 0;
   }
+  #screen-loading.active { display: flex; }
   .loading-logo { font-size: 48px; margin-bottom: 16px; animation: pulse 1.5s infinite; }
   @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.6;transform:scale(0.95)} }
   .loading-title { font-size: 22px; font-weight: 700; color: var(--gold); margin-bottom: 8px; }
@@ -506,9 +507,25 @@ async function verifyMember() {
     .single();
 
   if (!member) {
-    // 嘗試從 Ocard 資料對應（此處可擴充 Ocard API 串接）
-    showError('phone', '找不到此手機號碼的 Feeling Bar 會員資料。');
-    btn.disabled = false; btn.textContent = '驗證會員身份';
+    // 開放式會員制：非 Ocard 名單者，當場註冊為新會員（不再擋下）
+    const { error: insErr } = await supabaseClient.from('members').insert({
+      line_user_id: state.lineUserId,
+      display_name: state.memberName,
+      phone: phoneFormatted,
+      member_tier: 'gold',
+      is_verified: true,
+      last_updated: new Date().toISOString()
+    });
+    if (insErr) {
+      showError('phone', '註冊時發生問題，請稍後再試。');
+      btn.disabled = false; btn.textContent = '驗證會員身份';
+      return;
+    }
+    state.memberPhone = phoneFormatted;
+    state.ocardTier   = 'gold';
+    state.isVerified  = true;
+    showToast(`✅ 歡迎加入 Feeling Bar，${state.memberName}！`);
+    await loadMenu();
     return;
   }
 
@@ -822,18 +839,5 @@ window.addEventListener('DOMContentLoaded', () => {
   initApp();
 });
 </script>
-
-<!-- Google Maps Places API（在 Config 填好 Key 後取消註解）-->
-<script>
-// 動態載入 Google Maps
-function loadGoogleMaps() {
-  const script = document.createElement('script');
-  script.src = `https://maps.googleapis.com/maps/api/js?key=${CONFIG.GOOGLE_MAPS_API_KEY}&libraries=places&callback=initAutocomplete`;
-  script.async = true; script.defer = true;
-  document.head.appendChild(script);
-}
-// 在 initApp 成功後呼叫 loadGoogleMaps()
-</script>
-
 </body>
 </html>
