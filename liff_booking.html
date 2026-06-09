@@ -291,6 +291,32 @@
   .info-icon { font-size: 18px; flex-shrink: 0; width: 28px; text-align: center; }
   .info-label { font-size: 12px; color: var(--gray); margin-bottom: 3px; }
   .info-value { font-size: 14px; color: var(--white); font-weight: 500; }
+
+  /* ===== 落地頁 + 我的訂單 ===== */
+  .landing-hero { text-align: center; padding: 10px 0 6px; }
+  .landing-hello { font-size: 20px; font-weight: 700; color: var(--white); margin-top: 8px; }
+  .landing-sub { font-size: 13px; color: var(--gray); margin-top: 6px; }
+  .myorder-card {
+    background: var(--green-card); border: 1px solid rgba(201,168,76,0.15);
+    border-radius: 14px; padding: 14px 16px; margin-bottom: 12px;
+  }
+  .myorder-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .myorder-num { font-size: 14px; font-weight: 700; color: var(--gold); letter-spacing: 0.5px; }
+  .st-badge { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px; white-space: nowrap; }
+  .st-pending    { background: rgba(232,148,58,0.18);  color: #E8943A; }
+  .st-dispatched { background: rgba(76,175,129,0.18);  color: var(--success); }
+  .st-delivered  { background: rgba(138,158,147,0.18); color: var(--gray); }
+  .st-cancelled  { background: rgba(224,92,92,0.18);   color: var(--danger); }
+  .myorder-line { font-size: 13px; color: var(--gray); margin-top: 4px; line-height: 1.6; word-break: break-all; }
+  .myorder-amount { font-size: 15px; font-weight: 700; color: var(--gold); margin-top: 6px; }
+  .myorder-actions { display: flex; gap: 10px; margin-top: 12px; }
+  .btn-mini {
+    flex: 1; padding: 10px; border-radius: 10px; font-size: 13px; font-weight: 600;
+    cursor: pointer; border: 1px solid rgba(255,255,255,0.2); background: transparent; color: var(--white);
+  }
+  .btn-mini.danger { border-color: rgba(224,92,92,0.5); color: var(--danger); }
+  .btn-mini:active { opacity: 0.7; }
+  .empty-orders { text-align: center; color: var(--gray); padding: 40px 0; font-size: 14px; line-height: 1.8; }
 </style>
 </head>
 <body>
@@ -328,6 +354,26 @@
   <div style="text-align:center; margin-top:16px; font-size:13px; color:var(--gray);">
     首次使用？輸入手機號碼即可完成加入並開始預約<br>（會員預約制，全數交易均為現場結帳，非網路交易）
   </div>
+</div>
+
+<!-- ===== 落地頁：驗證後雙鈕分流（新訂單 / 我的訂單）===== -->
+<div id="screen-landing" class="screen">
+  <div class="landing-hero">
+    <span class="welcome-emoji">🥂</span>
+    <div class="landing-hello" id="landing-hello">歡迎回來</div>
+    <div class="landing-sub">Feeling Bar 私人酒水到府</div>
+  </div>
+  <div class="card">
+    <button class="btn-primary" onclick="startNewOrder()">＋ 新訂單</button>
+    <button class="btn-secondary" onclick="openMyOrders()">📋 我的訂單</button>
+  </div>
+</div>
+
+<!-- ===== 我的訂單：歷史單 + 狀態 + 取消 ===== -->
+<div id="screen-myorders" class="screen">
+  <div class="card-title" style="margin-bottom:16px; font-size:16px; color:var(--white)">📋 我的訂單</div>
+  <div id="myorders-list"><!-- 動態生成 --></div>
+  <button class="btn-secondary" onclick="goToStep('landing')">← 返回</button>
 </div>
 
 <!-- ===== STEP 2: 選擇品項 ===== -->
@@ -516,7 +562,7 @@ async function initApp() {
       state.ocardTier   = member.member_tier;
       state.isVerified  = true;
       await holdSplash(_splashT0);
-      loadMenu();
+      goToLanding();   // 回頭客免重驗，直達落地頁分流（§4）
     } else {
       await holdSplash(_splashT0);
       showScreen('verify');
@@ -569,7 +615,7 @@ async function verifyMember() {
     state.ocardTier   = 'normal';
     state.isVerified  = true;
     showToast(`✅ 歡迎加入 Feeling Bar，${state.memberName}！`);
-    await loadMenu();
+    goToLanding();
     return;
   }
 
@@ -585,7 +631,7 @@ async function verifyMember() {
   state.ocardTier   = member.member_tier;
   state.isVerified  = true;
   showToast(`✅ 歡迎回來，${state.memberName}！`);
-  await loadMenu();
+  goToLanding();
 }
 
 // ============================================================
@@ -598,6 +644,94 @@ async function loadMenu() {
   state.menuItems = items || [];
   renderMenu();
   goToStep('menu');
+}
+
+// ============================================================
+// 落地頁分流（§4）+ 我的訂單
+// ============================================================
+function goToLanding() {
+  const hello = state.memberName ? `${state.memberName}，歡迎回來` : '歡迎回來';
+  document.getElementById('landing-hello').textContent = hello;
+  goToStep('landing');
+}
+
+function startNewOrder() {
+  // 開新單：清空狀態再進菜單（loadMenu 會撈品項 + renderMenu + goToStep('menu')）
+  state.cart = {};
+  state.selectedDate = null; state.selectedSlot = null;
+  state.deliveryAddress = null; state.notes = null;
+  loadMenu();
+}
+
+// 狀態文案定版（§4.140）：以 orders.status 實際值對應，不新增欄位
+const ORDER_STATUS = {
+  pending:    { label: '待店家確認', cls: 'st-pending' },
+  dispatched: { label: '配送中',     cls: 'st-dispatched' },
+  en_route:   { label: '配送中',     cls: 'st-dispatched' },
+  delivered:  { label: '已送達',     cls: 'st-delivered' },
+  cancelled:  { label: '已取消',     cls: 'st-cancelled' },
+};
+
+async function openMyOrders() {
+  const list = document.getElementById('myorders-list');
+  list.innerHTML = '<div class="empty-orders">載入中…</div>';
+  goToStep('myorders');
+  // 以目前登入 UID 撈該客戶的單（最近在前）。
+  // ⚠️ MVP 以前端 UID 過濾；RLS「僅 line_user_id 相符可讀」屬改權限(§5.4)未自行加，列 BLOCKERS 資安待補。
+  const { data: orders, error } = await supabaseClient
+    .from('orders').select('*')
+    .eq('line_user_id', state.lineUserId)
+    .order('created_at', { ascending: false });
+  if (error) { list.innerHTML = '<div class="empty-orders">載入失敗，請稍後再試</div>'; return; }
+  renderMyOrders(orders || []);
+}
+
+function renderMyOrders(orders) {
+  const list = document.getElementById('myorders-list');
+  if (!orders.length) {
+    list.innerHTML = '<div class="empty-orders">目前沒有訂單<br>點「＋ 新訂單」開始預約 🍹</div>';
+    return;
+  }
+  list.innerHTML = orders.map(o => {
+    const st = ORDER_STATUS[o.status] || { label: o.status || '處理中', cls: 'st-pending' };
+    const items = Array.isArray(o.items) ? o.items.map(i => `${i.name}×${i.qty}`).join('、') : '';
+    const dateSlot = [o.requested_date, o.requested_time_slot].filter(Boolean).join(' ');
+    const canCancel = o.status === 'pending';
+    return `
+      <div class="myorder-card">
+        <div class="myorder-top">
+          <span class="myorder-num">${o.order_number}</span>
+          <span class="st-badge ${st.cls}">${st.label}</span>
+        </div>
+        ${items ? `<div class="myorder-line">🍹 ${items}</div>` : ''}
+        ${dateSlot ? `<div class="myorder-line">🕐 ${dateSlot}</div>` : ''}
+        ${o.delivery_address ? `<div class="myorder-line">📍 ${o.delivery_address}</div>` : ''}
+        <div class="myorder-amount">應付 $${o.total_amount}</div>
+        <div class="myorder-actions">
+          ${canCancel ? `<button class="btn-mini danger" onclick="cancelOrder('${o.id}')">取消訂單</button>` : ''}
+          <button class="btn-mini" onclick="contactStore()">聯絡店家</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function cancelOrder(orderId) {
+  if (!confirm('確定要取消這筆訂單嗎？取消後如需重訂請重新下單。')) return;
+  // 僅 pending 可取消；以 status 條件防呆，避免取消到已派單的單
+  const { data: updated, error } = await supabaseClient
+    .from('orders').update({ status: 'cancelled' })
+    .eq('id', orderId).eq('status', 'pending')
+    .select().single();
+  if (error || !updated) { showToast('⚠️ 此訂單已無法取消（可能已派單）'); openMyOrders(); return; }
+  notifyGAS({ type: 'order_cancelled', order: updated });   // 通知司機（GAS 端已加 handleCancelled）
+  showToast('✅ 訂單已取消');
+  openMyOrders();
+}
+
+function contactStore() {
+  const url = 'https://line.me/R/ti/p/@feeling.bar';
+  if (window.liff && liff.openWindow) liff.openWindow({ url, external: false });
+  else window.open(url, '_blank');
 }
 
 // 菜單系列定義（顯示名 + 酒精濃度 badge），決定分組順序
@@ -893,7 +1027,7 @@ function resetApp() {
   state.cart = {};
   state.selectedDate = null; state.selectedSlot = null;
   state.deliveryAddress = null; state.notes = null;
-  goToStep('menu');
+  goToLanding();   // 回首頁＝回落地頁（§4 單一入口分流）
   document.getElementById('top-bar').style.display = 'flex';
 }
 
