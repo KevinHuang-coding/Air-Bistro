@@ -357,9 +357,9 @@ async function notifyDelivered(orderId) {
   const order = todayOrders.find(o => o.id === orderId);
   if (!order) return;
   try {
+    // ❗同 liff_booking 的 CORS 坑：不帶 Content-Type:application/json，避免觸發 preflight 被 GAS 回 405 擋掉
     await fetch(CONFIG.GAS_WEBHOOK_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'delivered', order })
     });
   } catch(e) { console.warn('Notify fail:', e); }
