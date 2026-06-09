@@ -851,12 +851,17 @@ async function submitOrder() {
 }
 
 // 通知 GAS webhook（觸發 LINE 通知）
-async function notifyGAS(order) {
+async function notifyGAS(payload) {
   try {
+    // ❗不要設 Content-Type: application/json —— 會觸發 CORS preflight(OPTIONS)，
+    // GAS Web App 不處理 OPTIONS 回 405，preflight 失敗 → 瀏覽器直接擋掉這筆 POST。
+    // 不帶 header → 預設 text/plain;charset=UTF-8 → 簡單請求、無 preflight。
+    // GAS 端照常讀 e.postData.contents 再 JSON.parse，body 仍是同一段 JSON 字串。
+    // 相容舊呼叫：傳進來若是 order 物件(沒有 type 欄)，自動包成 new_order。
+    const body = (payload && payload.type) ? payload : { type: 'new_order', order: payload };
     await fetch(CONFIG.GAS_WEBHOOK_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'new_order', order })
+      body: JSON.stringify(body)
     });
   } catch (e) { console.warn('GAS notify failed:', e); }
 }
