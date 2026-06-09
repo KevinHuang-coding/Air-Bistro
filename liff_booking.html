@@ -156,6 +156,20 @@
   .qty-btn.minus:disabled { opacity: 0.3; cursor: default; }
   .qty-num { font-size: 16px; font-weight: 700; color: var(--white); min-width: 20px; text-align: center; }
 
+  /* ===== 菜單系列標題 ===== */
+  .menu-series-header {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 14px; font-weight: 700; color: var(--gold);
+    margin: 20px 0 4px; padding-bottom: 6px;
+    border-bottom: 1px solid rgba(201,168,76,0.2);
+  }
+  .menu-series-header:first-child { margin-top: 0; }
+  .abv-badge {
+    font-size: 11px; font-weight: 700; color: var(--green-dark);
+    background: var(--gold); border-radius: 20px; padding: 2px 10px;
+    flex-shrink: 0; margin-left: 10px;
+  }
+
   /* ===== 底部計算列 ===== */
   .cart-bar {
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
@@ -167,6 +181,7 @@
   .cart-info { font-size: 14px; color: var(--gray); }
   .cart-total { font-size: 20px; font-weight: 700; color: var(--gold); }
   .cart-min-warn { font-size: 11px; color: var(--danger); margin-top: 2px; }
+  .cart-discount { font-size: 11px; color: var(--success); margin-top: 2px; font-weight: 600; }
 
   /* ===== 時段選擇 ===== */
   .time-slots { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -357,7 +372,7 @@
       <div id="address-autocomplete-container">
         <input type="text" id="input-address" class="form-input" placeholder="請輸入您家的地址">
       </div>
-      <div class="form-hint">⚠️ 我們目前服務範圍：大台北地區</div>
+      <div class="form-hint">⚠️ 目前服務僅限台北市各區（各區免運）</div>
     </div>
   </div>
   <div class="card">
@@ -373,8 +388,16 @@
     <div class="card-title">🛒 訂單品項</div>
     <div id="confirm-items"><!-- 動態生成 --></div>
     <hr class="order-divider">
-    <div class="order-total-row">
-      <span>合計</span>
+    <div class="order-item-row" style="border-bottom:none">
+      <span style="color:var(--gray)">小計</span>
+      <span id="confirm-subtotal">$0</span>
+    </div>
+    <div class="order-item-row" id="confirm-discount-row" style="border-bottom:none; display:none">
+      <span style="color:var(--gray)">折扣</span>
+      <span id="confirm-discount" style="color:var(--success); font-weight:600">-$0</span>
+    </div>
+    <div class="order-total-row" style="margin-top:6px">
+      <span>應付</span>
       <span class="order-total-amount" id="confirm-total">$0</span>
     </div>
   </div>
@@ -418,7 +441,7 @@
     <div class="order-number-badge" id="success-order-number">AIR-000000-000</div>
     <div class="success-info" id="success-info">
       我們將在出發前 <strong style="color:var(--gold)">30 分鐘</strong> 透過 LINE 通知您<br><br>
-      小李預計於<br>
+      調酒師預計於<br>
       <strong style="color:var(--gold); font-size:18px" id="success-slot">-</strong><br>
       抵達您家樓下<br><br>
       <span style="color:var(--gray); font-size:13px">送達時以「現金」或「LINE Pay」結帳即可，謝謝 🙏</span>
@@ -432,6 +455,7 @@
   <div>
     <div class="cart-info"><span id="cart-count">0</span> 項品項</div>
     <div class="cart-min-warn" id="cart-warn">最低消費 $800（還差 $<span id="cart-gap">800</span>）</div>
+    <div class="cart-discount" id="cart-discount" style="display:none"></div>
   </div>
   <div style="display:flex; align-items:center; gap:16px">
     <div class="cart-total">$<span id="cart-total-num">0</span></div>
@@ -576,9 +600,21 @@ async function loadMenu() {
   goToStep('menu');
 }
 
+// 菜單系列定義（顯示名 + 酒精濃度 badge），決定分組順序
+const CATEGORY_META = {
+  cocktail_8:  { label: 'Feeling 8% 輕爽調酒系列',     badge: '8% vol' },
+  cocktail_14: { label: 'Feeling 14% 熟成調酒系列',    badge: '14% vol' },
+  cocktail_20: { label: 'Feeling 20% Strong 冰茶系列', badge: '20% vol' },
+  coffee:      { label: '調酒師做的咖啡 Coffee-tail',  badge: '無酒精' },
+  dessert:     { label: '甜點 Desserts',               badge: '' },
+  bread:       { label: '經典麵包 Classic Bread',      badge: '' },
+};
+const CATEGORY_ORDER = ['cocktail_8', 'cocktail_14', 'cocktail_20', 'coffee', 'dessert', 'bread'];
+
 function renderMenu() {
   const grid = document.getElementById('menu-grid');
-  grid.innerHTML = state.menuItems.map(item => `
+
+  const itemHtml = (item) => `
     <div class="menu-item" id="menu-item-${item.id}">
       <div class="item-emoji">${item.emoji}</div>
       <div class="item-info">
@@ -591,8 +627,19 @@ function renderMenu() {
         <div class="qty-num" id="qty-${item.id}">0</div>
         <button class="qty-btn" onclick="changeQty('${item.id}', 1)">+</button>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+
+  // 先按 CATEGORY_ORDER 排，未知分類殿後（防呆）
+  const cats = [...CATEGORY_ORDER];
+  state.menuItems.forEach(i => { if (i.category && !cats.includes(i.category)) cats.push(i.category); });
+
+  grid.innerHTML = cats.map(cat => {
+    const items = state.menuItems.filter(i => i.category === cat);
+    if (!items.length) return '';
+    const meta = CATEGORY_META[cat] || { label: cat, badge: '' };
+    const badge = meta.badge ? `<span class="abv-badge">${meta.badge}</span>` : '';
+    return `<div class="menu-series-header"><span>${meta.label}</span>${badge}</div>` + items.map(itemHtml).join('');
+  }).join('');
 }
 
 function changeQty(itemId, delta) {
@@ -621,6 +668,7 @@ function updateCartBar() {
   const gap = CONFIG.MIN_ORDER_AMOUNT - total;
   const warn = document.getElementById('cart-warn');
   const btn = document.getElementById('btn-next-step');
+  const discEl = document.getElementById('cart-discount');
 
   if (total >= CONFIG.MIN_ORDER_AMOUNT) {
     warn.style.display = 'none';
@@ -630,6 +678,23 @@ function updateCartBar() {
     document.getElementById('cart-gap').textContent = gap;
     btn.disabled = true;
   }
+
+  // 折扣即時提示（取符合的最高一檔，不疊加）
+  const discount = getDiscount(total);
+  if (discount > 0) {
+    discEl.style.display = 'block';
+    discEl.textContent = `已折 -$${discount}，應付 $${total - discount}`;
+  } else {
+    discEl.style.display = 'none';
+  }
+}
+
+// 折扣分檔（取符合的最高一檔，不疊加）：滿1200折100、滿2000折200、滿2800折300
+function getDiscount(subtotal) {
+  if (subtotal >= 2800) return 300;
+  if (subtotal >= 2000) return 200;
+  if (subtotal >= 1200) return 100;
+  return 0;
 }
 
 function getCartTotal() {
@@ -696,9 +761,19 @@ function goToConfirm() {
     </div>
   `).join('');
 
-  const total = getCartTotal();
-  document.getElementById('confirm-total').textContent = '$' + total;
-  document.getElementById('confirm-payment').textContent = '$' + total;
+  const subtotal = getCartTotal();
+  const discount = getDiscount(subtotal);
+  const payable  = subtotal - discount;
+  document.getElementById('confirm-subtotal').textContent = '$' + subtotal;
+  const discRow = document.getElementById('confirm-discount-row');
+  if (discount > 0) {
+    discRow.style.display = 'flex';
+    document.getElementById('confirm-discount').textContent = '-$' + discount;
+  } else {
+    discRow.style.display = 'none';
+  }
+  document.getElementById('confirm-total').textContent = '$' + payable;
+  document.getElementById('confirm-payment').textContent = '$' + payable;
   document.getElementById('confirm-date').textContent = state.selectedDate.replace(/-/g, '/');
   document.getElementById('confirm-slot').textContent = state.selectedSlot;
   document.getElementById('confirm-address').textContent = state.deliveryAddress;
@@ -730,7 +805,9 @@ async function submitOrder() {
 
   try {
     const items = getCartItems();
-    const total = getCartTotal();
+    const subtotal = getCartTotal();
+    const discount = getDiscount(subtotal);
+    const total = subtotal - discount;   // 應付金額（已扣折扣）= 司機收款 = orders.total_amount
 
     // 生成訂單編號（在 client 端生成，後端有 trigger 做更精確的）
     const now = new Date();

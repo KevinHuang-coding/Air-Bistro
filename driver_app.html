@@ -11,7 +11,7 @@
     SUPABASE_URL:      'https://meocathzmwumwewoolok.supabase.co',  // ✅ 已填入 2026-05-14
     SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1lb2NhdGh6bXd1bXdld29vbG9rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2ODU5NzYsImV4cCI6MjA5NDI2MTk3Nn0.syBc7lH96gH0uv4IPtjOyClJ6D7o5YtQl7yJIQvCX0w',  // ✅ 已填入 2026-05-14
     GAS_WEBHOOK_URL:   'https://script.google.com/macros/s/AKfycbyv0DD70lX0wsTCoxSaJ6AVdEW1cYL2BfyVEX2ESwHQBX2r1pagqu2f9vPYBnfKsa1m/exec',  // ✅ 已填入 2026-05-14
-    DRIVER_PIN:        '888888', // 預設 PIN，可在 Supabase drivers 表修改
+    // 司機 PIN 一律存於 Supabase drivers 表（pin_code 欄），不在此寫死
     GPS_INTERVAL_MS:   30000,    // 每 30 秒回傳一次 GPS
   };
 </script>
@@ -241,13 +241,15 @@ function updatePinDots() {
 }
 
 async function checkPin() {
-  const { data: driver } = await db.from('drivers').select('*').eq('pin_code', pinBuffer).single();
+  // 只允許 login_enabled=true 的司機登入（停用的司機保留資料但無法登入）
+  const { data: driver } = await db.from('drivers')
+    .select('*').eq('pin_code', pinBuffer).eq('login_enabled', true).single();
   if (driver) {
     driverData = driver;
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('main-screen').style.display = 'block';
     const today = new Date().toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', weekday: 'long' });
-    document.getElementById('header-date').textContent = today;
+    document.getElementById('header-date').textContent = `${driver.name}・${today}`;
     loadTodayOrders();
     subscribeToOrders();
   } else {
