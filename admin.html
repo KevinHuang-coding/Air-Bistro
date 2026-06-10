@@ -483,11 +483,42 @@
     .empty-state-icon { font-size: 40px; margin-bottom: 12px; }
     .empty-state-text { font-size: 14px; }
 
-    /* Responsive */
+    /* ── Responsive（手機版 RWD：單欄、頁面自然捲動、44px 觸控目標）── */
     @media (max-width: 768px) {
-      .main-layout { grid-template-columns: 1fr; }
-      .map-panel { display: none; }
+      /* 版面：雙欄→單欄，內捲改頁捲 */
+      .main-layout { grid-template-columns: 1fr; height: auto; overflow: visible; }
+      .map-panel { display: none; }   /* 手機看列表為主；導航走訂單內「🗺️ 導航」 */
+      .order-panel { border-right: none; overflow: visible; }
+      .order-list { overflow: visible; padding: 10px 12px 4px; }
       .stats-bar { grid-template-columns: repeat(2, 1fr); }
+      .header { flex-wrap: wrap; gap: 8px; }
+
+      /* 面板頂列：日期下拉整行、篩選分頁等寬四格 */
+      .panel-header { flex-wrap: wrap; gap: 10px; padding: 12px; }
+      .date-view-select { max-width: none; width: 100%; padding: 12px 14px; font-size: 15px; }
+      .filter-tabs { width: 100%; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+      .filter-tab { padding: 10px 4px; font-size: 13px; text-align: center; }
+
+      /* 路線規劃列：黏在畫面底部、按鈕成列、說明文字整行 */
+      .route-bar {
+        flex-wrap: wrap; gap: 8px; padding: 12px;
+        position: sticky; bottom: 0; z-index: 50;
+        box-shadow: 0 -6px 18px rgba(0,0,0,0.4);
+      }
+      /* 第一行：規劃+全選；第二行：出發 label+時間欄成組 */
+      .route-btn { flex: 1 1 55%; min-height: 44px; font-size: 14px; }
+      .route-btn-sm { flex: 1 1 38%; min-height: 44px; font-size: 13px; }
+      .depart-label { flex: 0 0 auto; font-size: 14px; }
+      .depart-time-input { flex: 1 1 auto; min-height: 44px; font-size: 15px; width: auto; }
+      .route-info { flex-basis: 100%; order: 10; font-size: 12px; line-height: 1.7; }
+
+      /* 觸控目標與明細 */
+      .order-card { padding: 16px 14px; }
+      .route-check { width: 20px; height: 20px; }
+      .action-btn { min-height: 44px; }
+      .detail-panel { max-height: 55vh; }
+      .detail-close-btn { padding: 10px 16px; }
+      .logout-btn { padding: 10px 14px; }
     }
   </style>
 </head>
@@ -528,7 +559,7 @@
     <div class="header-right">
       <div>
         <span class="driver-status-dot" id="driver-dot"></span>
-        <span class="driver-status-label" id="driver-label">小李：未出勤</span>
+        <span class="driver-status-label" id="driver-label">司機：未出勤</span>
       </div>
       <button class="logout-btn" onclick="doLogout()">登出</button>
     </div>
@@ -595,7 +626,7 @@
     <div class="map-panel">
       <div id="map"></div>
       <div class="map-overlay">
-        <button class="map-btn" id="btn-track" onclick="toggleTracking()">📍 追蹤小李</button>
+        <button class="map-btn" id="btn-track" onclick="toggleTracking()">📍 追蹤司機</button>
         <button class="map-btn" onclick="fitAllMarkers()">🔭 全覽地圖</button>
         <button class="map-btn" onclick="refreshOrders()">🔄 重新整理</button>
       </div>
@@ -802,7 +833,7 @@ async function refreshOrders() {
     .neq('status', 'cancelled')
     .order('requested_time_slot', { ascending: true });
 
-  if (error) { toast('載入訂單失敗：' + error.message, 'error'); return; }
+  if (error) { toast('訂單載入失敗，請檢查網路後再試；若持續失敗請重新登入（' + error.message + '）', 'error'); return; }
   dateRangeOrders = data || [];
   buildDateOptions();
   applyViewDate();
@@ -906,7 +937,7 @@ function renderOrderList() {
   const list = document.getElementById('order-list');
   const orders = getFilteredOrders();
   if (!orders.length) {
-    list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🎉</div><div class="empty-state-text">目前沒有訂單</div></div>`;
+    list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">這一天還沒有訂單<br><span style="font-size:12px;opacity:0.8">會員下單後會即時出現在這裡；可用上方日期看其他天</span></div></div>`;
     return;
   }
   list.innerHTML = orders.map(o => {
@@ -947,7 +978,7 @@ function toggleRouteSelect(orderId) {
 function selectAllActive() {
   const active = allOrders.filter(o =>
     ['confirmed', 'dispatched', 'en_route'].includes(o.status) && o.delivery_lat && o.delivery_lng);
-  if (!active.length) { toast('目前沒有可規劃的進行中訂單', 'error'); return; }
+  if (!active.length) { toast('這一天沒有可規劃的訂單——先點開訂單按「✅ 確認訂單」，確認後才能納入路線', 'error'); return; }
   active.forEach(o => selectedOrderIds.add(o.id));
   renderOrderList();
   toast(`已勾選 ${active.length} 筆進行中訂單`);
@@ -1007,7 +1038,7 @@ function renderDetailPanel(order) {
     `;
   } else if (order.status === 'confirmed') {
     actionHtml = `
-      <button class="action-btn btn-dispatch" onclick="dispatchOrder('${order.id}')">🚐 派單給小李</button>
+      <button class="action-btn btn-dispatch" onclick="dispatchOrder('${order.id}')">🚐 派單給司機</button>
       <button class="action-btn btn-nav"      onclick="window.open('${mapsUrl}', '_blank')">🗺️ 導航</button>
     `;
   } else if (order.status === 'dispatched') {
@@ -1086,24 +1117,26 @@ async function updateOrderStatus(orderId, newStatus, extraFields = {}) {
 }
 
 async function cancelOrder(orderId) {
-  if (!confirm('確定要取消此訂單嗎？')) return;
+  const o = allOrders.find(x => x.id === orderId);
+  if (!confirm(`取消訂單 ${o ? o.order_number : ''}？\n取消後無法復原；如需通知會員，請另行聯繫。`)) return;
   await updateOrderStatus(orderId, 'cancelled');
   document.getElementById('detail-panel').classList.remove('open');
   selectedOrderId = null;
-  toast('訂單已取消', 'error');
+  toast('已取消訂單', 'error');
 }
 
 async function dispatchOrder(orderId) {
   const order = allOrders.find(o => o.id === orderId);
   if (!order) return;
 
-  // Ask for ETA
-  const etaStr = prompt('預估抵達時間（例：20:30）：');
+  // Ask for ETA（會員會在 LINE 通知裡看到這個時間）
+  const etaStr = prompt('預估抵達時間？會員將在 LINE 通知中看到（24 小時制，例：20:30）');
   if (!etaStr) return;
+  const mEta = etaStr.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!mEta) { toast('時間格式不對，請輸入如 20:30', 'error'); return; }
 
-  const today = new Date();
-  const [h, m] = etaStr.split(':').map(Number);
-  const eta = new Date(today.getFullYear(), today.getMonth(), today.getDate(), h, m);
+  // ETA 落在該單的預約日（派未來單時不會錯植到今天）
+  const eta = new Date(`${order.requested_date}T${mEta[1].padStart(2, '0')}:${mEta[2]}:00`);
 
   showLoading('派單中...');
   const ok = await updateOrderStatus(orderId, 'dispatched', {
@@ -1117,7 +1150,7 @@ async function dispatchOrder(orderId) {
   callGAS('dispatched', orderWithEta);
 
   hideLoading();
-  toast('✅ 已派單，LINE 通知已發送給小李和會員');
+  toast('✅ 已派單，LINE 通知已發送給司機與會員');
 }
 
 async function sendEnRouteNotification(orderId) {
@@ -1243,7 +1276,7 @@ async function fetchDriverLocation() {
     const lastUpdate = data.last_location_update
       ? new Date(data.last_location_update).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
       : '--';
-    label.textContent = `小李：出勤中 · ${lastUpdate}`;
+    label.textContent = `司機：出勤中 · ${lastUpdate}`;
 
     if (map && data.current_lat && data.current_lng) {
       const pos = { lat: parseFloat(data.current_lat), lng: parseFloat(data.current_lng) };
@@ -1252,7 +1285,7 @@ async function fetchDriverLocation() {
         driverMarker = new google.maps.Marker({
           position: pos,
           map,
-          title: '小李（司機）',
+          title: '司機位置',
           icon: {
             url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
               <svg width="36" height="36" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg">
@@ -1273,7 +1306,7 @@ async function fetchDriverLocation() {
     }
   } else {
     dot.classList.remove('active');
-    label.textContent = '小李：未出勤';
+    label.textContent = '司機：未出勤';
     if (driverMarker) { driverMarker.setMap(null); driverMarker = null; }
   }
 }
@@ -1282,7 +1315,7 @@ function toggleTracking() {
   trackingEnabled = !trackingEnabled;
   const btn = document.getElementById('btn-track');
   btn.classList.toggle('active', trackingEnabled);
-  btn.textContent = trackingEnabled ? '📍 追蹤中' : '📍 追蹤小李';
+  btn.textContent = trackingEnabled ? '📍 追蹤中' : '📍 追蹤司機';
   if (trackingEnabled && driverMarker) map.panTo(driverMarker.getPosition());
 }
 
@@ -1366,7 +1399,7 @@ async function optimizeRoute() {
     travelMode: google.maps.TravelMode.DRIVING,
   }, (result, status) => {
     hideLoading();
-    if (status !== 'OK') { toast('路線計算失敗：' + status, 'error'); return; }
+    if (status !== 'OK') { toast(`路線計算失敗（${status}）——請確認勾選訂單的地址座標完整，再試一次`, 'error'); return; }
 
     routeRenderer.setDirections(result);
     const route = result.routes[0];
