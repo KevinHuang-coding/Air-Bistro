@@ -1344,13 +1344,53 @@ function normPos(p) {
   return (typeof p.lat === 'function') ? { lat: p.lat(), lng: p.lng() } : { lat: p.lat, lng: p.lng };
 }
 
+// 地址 → 經緯度（LIFF 自動完成未啟用期間的訂單沒座標，規劃時補定位）
+function geocodeAddress(addr) {
+  return new Promise(resolve => {
+    try {
+      new google.maps.Geocoder().geocode({ address: addr, region: 'tw' }, (results, status) => {
+        if (status === 'OK' && results && results[0]) {
+          const loc = results[0].geometry.location;
+          resolve({ lat: loc.lat(), lng: loc.lng() });
+        } else resolve(null);
+      });
+    } catch (e) { resolve(null); }
+  });
+}
+
 // VRPTW（帶時間窗排程）：時段為主軸、同時段內距離為輔、ETA 含現場停留、超時警示
 async function optimizeRoute() {
   if (!map) { toast('地圖尚未載入', 'error'); return; }
 
-  // 只規劃「已勾選」且有經緯度的訂單（不再無差別抓全部 active）
-  const picked = allOrders
-    .filter(o => selectedOrderIds.has(o.id) && o.delivery_lat && o.delivery_lng)
+  // ① 以「已勾選」為準（座標另外處理，不再默默過濾害提示誤導）
+  const selected = allOrders.filter(o => selectedOrderIds.has(o.id));
+  if (selected.length < 2) {
+    toast('請先勾選至少 2 筆訂單（訂單卡左上的方框）', 'error');
+    return;
+  }
+
+  // ② 沒座標的單→用地址即時定位，並回寫 DB 一勞永逸
+  const noGeo = selected.filter(o => !o.delivery_lat || !o.delivery_lng);
+  const failedNums = [];
+  if (noGeo.length) {
+    showLoading(`定位 ${noGeo.length} 筆訂單地址...`);
+    for (const o of noGeo) {
+      const pos = await geocodeAddress(o.delivery_address);
+      if (pos) {
+        o.delivery_lat = String(pos.lat);
+        o.delivery_lng = String(pos.lng);
+        supabase.from('orders')
+          .update({ delivery_lat: o.delivery_lat, delivery_lng: o.delivery_lng, last_updated: new Date().toISOString() })
+          .eq('id', o.id).then(() => {});
+      } else {
+        failedNums.push(o.order_number);
+      }
+    }
+  }
+
+  // ③ 仍定位不到的明確點名，可定位不足 2 筆才擋
+  const picked = selected
+    .filter(o => o.delivery_lat && o.delivery_lng)
     .map(o => ({
       o,
       lat: parseFloat(o.delivery_lat),
@@ -1358,8 +1398,12 @@ async function optimizeRoute() {
       slot: parseSlot(o.requested_time_slot),
     }));
 
+  if (failedNums.length) {
+    toast(`⚠️ ${failedNums.length} 筆地址定位失敗已略過：${failedNums.join('、')}（請點開訂單確認地址）`, 'error');
+  }
   if (picked.length < 2) {
-    toast('請先選取至少 2 筆訂單（勾選訂單卡左上的方框）', 'error');
+    hideLoading();
+    toast('可定位的訂單不足 2 筆，無法規劃路線', 'error');
     return;
   }
 
