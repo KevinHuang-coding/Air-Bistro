@@ -164,6 +164,7 @@
   }
   .menu-item.selected { border-color: var(--mint); background: var(--mint-soft); }
   .item-emoji { font-size: 32px; flex-shrink: 0; width: 44px; text-align: center; }
+  .item-thumb { width: 44px; height: 44px; flex-shrink: 0; border-radius: 10px; object-fit: cover; display: block; }
   .item-info { flex: 1; min-width: 0; }
   .item-name { font-size: 15px; font-weight: 600; color: var(--ink); }
   .item-desc { font-size: 12px; color: var(--ink-soft); margin-top: 3px; }
@@ -793,12 +794,32 @@ const CATEGORY_META = {
 };
 const CATEGORY_ORDER = ['cocktail_8', 'cocktail_14', 'cocktail_20', 'coffee', 'dessert', 'bread'];
 
+// 調酒/咖啡 DM 縮圖（軍師 2026-06-11 上架；有照片放 <img>，無則退回 emoji）
+const THUMB = {
+  '甘蔗檸檬莫奇朵': 'img/cocktails/ck01.webp',
+  '百香果碧螺春莫奇朵': 'img/cocktails/ck02.webp',
+  '白桃翠玉莫奇朵': 'img/cocktails/ck03.webp',
+  '太妃糖拿鐵奶酒': 'img/cocktails/ck04.webp',
+  '泰奶焙火烏龍蘭姆酒': 'img/cocktails/ck05.webp',
+  '鹹楊桃琴酒': 'img/cocktails/ck06.webp',
+  '蜜香紅茶荔枝琴酒': 'img/cocktails/ck07.webp',
+  '聖木咖啡馬丁尼': 'img/cocktails/ck08.webp',
+  '紫芋茉莉奶酒': 'img/cocktails/ck09.webp',
+  '福爾摩沙鳳梨可樂達': 'img/cocktails/ck10.webp',
+  '蜂蜜檸檬威士忌': 'img/cocktails/ck11.webp',
+  '搖滾冰美式': 'img/cocktails/ck12.webp',
+  '雲頂維也納咖啡': 'img/cocktails/ck13.webp',
+  '生椰咖啡鳳梨可樂達': 'img/cocktails/ck14.webp',
+  '葡萄柚氣泡咖啡通寧': 'img/cocktails/ck15.webp',
+  '櫻花斑蘭咖啡': 'img/cocktails/ck16.webp',
+};
+
 function renderMenu() {
   const grid = document.getElementById('menu-grid');
 
   const itemHtml = (item) => `
     <div class="menu-item" id="menu-item-${item.id}">
-      <div class="item-emoji">${item.emoji}</div>
+      ${THUMB[item.name] ? `<img class="item-thumb" src="${THUMB[item.name]}" alt="${item.name}" loading="lazy">` : `<div class="item-emoji">${item.emoji}</div>`}
       <div class="item-info">
         <div class="item-name">${item.name}</div>
         <div class="item-desc">${item.description || ''}</div>
