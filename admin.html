@@ -1344,68 +1344,28 @@ function normPos(p) {
   return (typeof p.lat === 'function') ? { lat: p.lat(), lng: p.lng() } : { lat: p.lat, lng: p.lng };
 }
 
-// 地址 → 經緯度（LIFF 自動完成未啟用期間的訂單沒座標，規劃時補定位）
-function geocodeAddress(addr) {
-  return new Promise(resolve => {
-    try {
-      new google.maps.Geocoder().geocode({ address: addr, region: 'tw' }, (results, status) => {
-        if (status === 'OK' && results && results[0]) {
-          const loc = results[0].geometry.location;
-          resolve({ lat: loc.lat(), lng: loc.lng() });
-        } else resolve(null);
-      });
-    } catch (e) { resolve(null); }
-  });
-}
-
 // VRPTW（帶時間窗排程）：時段為主軸、同時段內距離為輔、ETA 含現場停留、超時警示
 async function optimizeRoute() {
   if (!map) { toast('地圖尚未載入', 'error'); return; }
 
-  // ① 以「已勾選」為準（座標另外處理，不再默默過濾害提示誤導）
+  // 以「已勾選」為準。沒座標的單（LIFF 自動完成未啟用期間下的）不丟棄：
+  // 直接把地址字串交給 Directions 當路線點（Directions API 已啟用、接受地址，
+  // 不依賴另開 Geocoding API），算完再從回應撈座標回寫 DB。
   const selected = allOrders.filter(o => selectedOrderIds.has(o.id));
   if (selected.length < 2) {
     toast('請先勾選至少 2 筆訂單（訂單卡左上的方框）', 'error');
     return;
   }
 
-  // ② 沒座標的單→用地址即時定位，並回寫 DB 一勞永逸
-  const noGeo = selected.filter(o => !o.delivery_lat || !o.delivery_lng);
-  const failedNums = [];
-  if (noGeo.length) {
-    showLoading(`定位 ${noGeo.length} 筆訂單地址...`);
-    for (const o of noGeo) {
-      const pos = await geocodeAddress(o.delivery_address);
-      if (pos) {
-        o.delivery_lat = String(pos.lat);
-        o.delivery_lng = String(pos.lng);
-        supabase.from('orders')
-          .update({ delivery_lat: o.delivery_lat, delivery_lng: o.delivery_lng, last_updated: new Date().toISOString() })
-          .eq('id', o.id).then(() => {});
-      } else {
-        failedNums.push(o.order_number);
-      }
-    }
-  }
-
-  // ③ 仍定位不到的明確點名，可定位不足 2 筆才擋
-  const picked = selected
-    .filter(o => o.delivery_lat && o.delivery_lng)
-    .map(o => ({
-      o,
-      lat: parseFloat(o.delivery_lat),
-      lng: parseFloat(o.delivery_lng),
+  const picked = selected.map(o => {
+    const hasGeo = !!(o.delivery_lat && o.delivery_lng);
+    return {
+      o, hasGeo,
+      lat: hasGeo ? parseFloat(o.delivery_lat) : null,
+      lng: hasGeo ? parseFloat(o.delivery_lng) : null,
       slot: parseSlot(o.requested_time_slot),
-    }));
-
-  if (failedNums.length) {
-    toast(`⚠️ ${failedNums.length} 筆地址定位失敗已略過：${failedNums.join('、')}（請點開訂單確認地址）`, 'error');
-  }
-  if (picked.length < 2) {
-    hideLoading();
-    toast('可定位的訂單不足 2 筆，無法規劃路線', 'error');
-    return;
-  }
+    };
+  });
 
   showLoading('依預約時段計算排程...');
 
@@ -1414,25 +1374,25 @@ async function optimizeRoute() {
 
   // ── 排序主軸＝預約時段起始時間（早→晚）；同一最早時段子群內，以行車距離近者優先 ──
   const slotStart = x => (x.slot ? x.slot.start : Infinity);   // 無時段者殿後
+  const dist = (from, x) => x.hasGeo ? haversine(from, x) : Infinity;   // 無座標者同時段內殿後
   const pool = picked.slice();
   const ordered = [];
   let cursor = originPos;
   while (pool.length) {
     const minStart = Math.min(...pool.map(slotStart));
     const tier = pool.filter(x => slotStart(x) === minStart);     // 同時段子群
-    tier.sort((a, b) => haversine(cursor, a) - haversine(cursor, b));  // 子群內近者先
+    tier.sort((a, b) => dist(cursor, a) - dist(cursor, b));        // 子群內近者先
     const next = tier[0];
     ordered.push(next);
-    cursor = { lat: next.lat, lng: next.lng };
+    if (next.hasGeo) cursor = { lat: next.lat, lng: next.lng };    // 無座標者位置未知，cursor 不動
     pool.splice(pool.indexOf(next), 1);
   }
 
   // ── 依「我們排好的順序」畫線（optimizeWaypoints:false，不讓 Google 打亂時段）──
-  const waypoints = ordered.slice(0, -1).map(x => ({
-    location: new google.maps.LatLng(x.lat, x.lng), stopover: true,
-  }));
-  const last = ordered[ordered.length - 1];
-  const destination = new google.maps.LatLng(last.lat, last.lng);
+  // 無座標的單以「地址字串」當路線點，Google 會在 Directions 內部解析
+  const locOf = x => x.hasGeo ? new google.maps.LatLng(x.lat, x.lng) : x.o.delivery_address;
+  const waypoints = ordered.slice(0, -1).map(x => ({ location: locOf(x), stopover: true }));
+  const destination = locOf(ordered[ordered.length - 1]);
 
   const service = new google.maps.DirectionsService();
   service.route({
@@ -1443,12 +1403,28 @@ async function optimizeRoute() {
     travelMode: google.maps.TravelMode.DRIVING,
   }, (result, status) => {
     hideLoading();
-    if (status !== 'OK') { toast(`路線計算失敗（${status}）——請確認勾選訂單的地址座標完整，再試一次`, 'error'); return; }
+    if (status === 'NOT_FOUND') {
+      const noGeoNums = ordered.filter(x => !x.hasGeo).map(x => x.o.order_number);
+      toast(`路線計算失敗：有地址 Google 找不到${noGeoNums.length ? `（無座標的單：${noGeoNums.join('、')}）` : ''}——請點開訂單檢查地址`, 'error');
+      return;
+    }
+    if (status !== 'OK') { toast(`路線計算失敗（${status}），請稍後再試一次`, 'error'); return; }
 
     routeRenderer.setDirections(result);
     const route = result.routes[0];
     const legs = route.legs;   // 與 ordered 同序：origin→站1→站2…
     const totalDistance = legs.reduce((s, l) => s + l.distance.value, 0);
+
+    // 無座標的單：從 Directions 回應撈 Google 解析出的座標，回寫 DB 一勞永逸
+    ordered.forEach((x, i) => {
+      if (x.hasGeo || !legs[i] || !legs[i].end_location) return;
+      const p = legs[i].end_location;
+      x.o.delivery_lat = String(p.lat()); x.o.delivery_lng = String(p.lng());
+      x.lat = p.lat(); x.lng = p.lng(); x.hasGeo = true;
+      supabase.from('orders')
+        .update({ delivery_lat: x.o.delivery_lat, delivery_lng: x.o.delivery_lng, last_updated: new Date().toISOString() })
+        .eq('id', x.o.id).then(() => {});
+    });
 
     // ── ETA（含現場停留）：抵達第 i 站 = 出發時刻 + Σ前面各段車程 + 前面站數×STOP_DURATION ──
     // 出發時刻取「🚐 出發」欄（今天預設=現在；未來日預設=該日最早時段-30分）→ 未來日也能提前排程
