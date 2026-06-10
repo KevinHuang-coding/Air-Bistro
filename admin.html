@@ -946,9 +946,9 @@ function callGAS(type, order) {
     console.log('GAS not configured, skipping notification');
     return;
   }
+  // ❗不帶 Content-Type:application/json —— 否則觸發 CORS preflight(OPTIONS)，GAS 回 405 擋掉派單通知
   fetch(CONFIG.GAS_WEBHOOK_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ type, order }),
   }).catch(err => console.warn('GAS call failed:', err));
 }
