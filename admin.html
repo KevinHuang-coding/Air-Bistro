@@ -263,6 +263,16 @@
     .route-btn-sm:hover { background: rgba(255,255,255,0.14); }
     .route-stop-line { display: block; margin-top: 3px; }
 
+    /* 出發時間（ETA 起算時刻；未來日提前排程用） */
+    .depart-label { font-size: 12px; color: var(--gray); white-space: nowrap; }
+    .depart-time-input {
+      background: var(--green-light); color: var(--white);
+      border: 1px solid rgba(201,168,76,0.35); border-radius: 8px;
+      padding: 6px 8px; font-size: 12px; font-weight: 600;
+      outline: none; color-scheme: dark; width: 92px;
+    }
+    .depart-time-input:focus { border-color: var(--gold); }
+
     .order-card-top {
       display: flex;
       align-items: center;
@@ -559,6 +569,8 @@
       <div class="route-bar">
         <button class="route-btn" onclick="optimizeRoute()">🗺️ 一鍵路線規劃</button>
         <button class="route-btn-sm" onclick="selectAllActive()">☑ 全選進行中</button>
+        <label class="depart-label" for="depart-time" title="ETA 起算時刻；未來日請填當天預計出發時間">🚐 出發</label>
+        <input type="time" id="depart-time" class="depart-time-input" title="ETA 起算時刻；未來日請填當天預計出發時間">
         <div class="route-info" id="route-info">勾選訂單後點擊，依預約時段＋路程自動排序並標示遲到風險</div>
       </div>
     </div>
@@ -806,6 +818,7 @@ function applyViewDate() {
   renderOrderList();
   updateStats();
   updateMapMarkers();
+  if (!document.getElementById('depart-time').value) prefillDepartTime();   // 不覆蓋使用者手填值
 }
 
 function onViewDateChange() {
@@ -817,6 +830,33 @@ function onViewDateChange() {
   document.getElementById('detail-panel').classList.remove('open');
   document.getElementById('route-info').textContent = '勾選訂單後點擊，依預約時段＋路程自動排序並標示遲到風險';
   applyViewDate();
+  prefillDepartTime();   // 切日重帶預設出發時間（今天=現在；未來=該日最早時段-30分）
+}
+
+// 出發時間預設：今天＝現在；未來/過去日＝該日最早預約時段起始 −30 分（無單則 19:30）
+function prefillDepartTime() {
+  const el = document.getElementById('depart-time');
+  const pad = n => String(n).padStart(2, '0');
+  if (viewDate === ymd(new Date())) {
+    const n = new Date();
+    el.value = `${pad(n.getHours())}:${pad(n.getMinutes())}`;
+    return;
+  }
+  const starts = allOrders.map(o => parseSlot(o.requested_time_slot)).filter(Boolean).map(s => s.start);
+  if (starts.length) {
+    const m = Math.max(0, Math.min(...starts) - 30);
+    el.value = `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
+  } else {
+    el.value = '19:30';
+  }
+}
+
+// ETA 起算時刻＝檢視日 + 出發時間欄；空值防呆：今天→現在、其他日→19:30
+function getDepartureTime() {
+  const t = (document.getElementById('depart-time').value || '').trim();
+  const date = viewDate || ymd(new Date());
+  if (/^\d{2}:\d{2}$/.test(t)) return new Date(`${date}T${t}:00`);
+  return date === ymd(new Date()) ? new Date() : new Date(`${date}T19:30:00`);
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1243,11 +1283,6 @@ function normPos(p) {
 // VRPTW（帶時間窗排程）：時段為主軸、同時段內距離為輔、ETA 含現場停留、超時警示
 async function optimizeRoute() {
   if (!map) { toast('地圖尚未載入', 'error'); return; }
-  // ETA 以「現在」起算，只對今天有意義；未來日先看單量排人力，當天再規劃路線
-  if (viewDate && viewDate !== ymd(new Date())) {
-    toast('路線規劃僅支援今天（ETA 以現在時刻起算）；未來日期請先用單量排人力', 'error');
-    return;
-  }
 
   // 只規劃「已勾選」且有經緯度的訂單（不再無差別抓全部 active）
   const picked = allOrders
@@ -1307,15 +1342,16 @@ async function optimizeRoute() {
     const legs = route.legs;   // 與 ordered 同序：origin→站1→站2…
     const totalDistance = legs.reduce((s, l) => s + l.distance.value, 0);
 
-    // ── ETA（含現場停留）：抵達第 i 站 = 起算 + Σ前面各段車程 + 前面站數×STOP_DURATION ──
+    // ── ETA（含現場停留）：抵達第 i 站 = 出發時刻 + Σ前面各段車程 + 前面站數×STOP_DURATION ──
+    // 出發時刻取「🚐 出發」欄（今天預設=現在；未來日預設=該日最早時段-30分）→ 未來日也能提前排程
     const STOP = (CONFIG.STOP_DURATION_MIN || 45) * 60;   // 秒
-    const now = new Date();
+    const startTime = getDepartureTime();
     routePlan = {};
     let driveCum = 0;          // 累積車程（秒）
     const stopLines = [];
     ordered.forEach((x, i) => {
       driveCum += legs[i].duration.value;                       // 開到第 i 站的車程
-      const eta = new Date(now.getTime() + (driveCum + i * STOP) * 1000);   // 前面 i 站各停留 STOP
+      const eta = new Date(startTime.getTime() + (driveCum + i * STOP) * 1000);   // 前面 i 站各停留 STOP
       const etaLabel = eta.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
 
       // 時段警示：晚於結束→遲到；早於開始>30分→過早；否則正常
@@ -1341,8 +1377,9 @@ async function optimizeRoute() {
     const km = (totalDistance / 1000).toFixed(1);
     const lateCount = Object.values(routePlan).filter(p => p.status === 'late').length;
 
+    const departLabel = startTime.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
     document.getElementById('route-info').innerHTML =
-      `<strong>⏱️ 全程約 ${minutes} 分 · ${km} km · ${ordered.length} 站</strong>`
+      `<strong>🚐 ${viewDate.replace(/-/g, '/')} ${departLabel} 出發 · ⏱️ 全程約 ${minutes} 分 · ${km} km · ${ordered.length} 站</strong>`
       + (lateCount ? ` <span style="color:var(--red)">· ⚠️ ${lateCount} 站恐遲到</span>` : '')
       + stopLines.join('');
 
