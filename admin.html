@@ -320,6 +320,22 @@
 
     .detail-panel.open { display: block; }
 
+    /* 明細收合列（sticky 置頂，捲動時收合鈕不消失） */
+    .detail-close-bar {
+      position: sticky; top: -16px;   /* 抵銷 panel padding，貼齊頂部 */
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--green-dark);
+      margin: -16px -16px 12px; padding: 10px 16px;
+      border-bottom: 1px solid rgba(201,168,76,0.15); z-index: 5;
+    }
+    .detail-close-title { font-size: 12px; font-weight: 700; color: var(--gold); letter-spacing: 0.5px; }
+    .detail-close-btn {
+      background: rgba(255,255,255,0.08); color: var(--white);
+      border: 1px solid rgba(255,255,255,0.18); border-radius: 8px;
+      padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .detail-close-btn:active { background: rgba(255,255,255,0.16); }
+
     .detail-section { margin-bottom: 14px; }
     .detail-label { font-size: 11px; color: var(--gray); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
     .detail-value { font-size: 13px; color: var(--white); }
@@ -941,6 +957,11 @@ function selectAllActive() {
 //  ORDER DETAIL
 // ══════════════════════════════════════════════════════════
 function selectOrder(orderId) {
+  // 再點同一張卡＝收合明細（toggle）
+  if (selectedOrderId === orderId && document.getElementById('detail-panel').classList.contains('open')) {
+    closeDetailPanel();
+    return;
+  }
   selectedOrderId = orderId;
   renderOrderList();
 
@@ -954,6 +975,12 @@ function selectOrder(orderId) {
   }
 
   renderDetailPanel(order);
+}
+
+function closeDetailPanel() {
+  document.getElementById('detail-panel').classList.remove('open');
+  selectedOrderId = null;
+  renderOrderList();   // 移除卡片高亮
 }
 
 function renderDetailPanel(order) {
@@ -998,6 +1025,10 @@ function renderDetailPanel(order) {
   }
 
   panel.innerHTML = `
+    <div class="detail-close-bar">
+      <span class="detail-close-title">訂單明細</span>
+      <button class="detail-close-btn" onclick="closeDetailPanel()" title="收合明細">✕ 收合</button>
+    </div>
     <div class="detail-section">
       <div class="detail-label">訂單資訊</div>
       <div class="detail-value">${order.order_number} · ⏰ ${order.requested_time_slot}</div>
