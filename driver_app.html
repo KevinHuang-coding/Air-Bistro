@@ -241,24 +241,32 @@ function updatePinDots() {
 }
 
 async function checkPin() {
-  // 只允許 login_enabled=true 的司機登入（停用的司機保留資料但無法登入）
+  const pin = pinBuffer;
+  // 1) Supabase Auth 登入 → 取得 authenticated 角色（保留 realtime + 完整存取）；
+  //    PIN 即 auth 密碼（員工輸入、不寫進前端）；停用司機沒有 auth 帳號 → 登入失敗
+  const { data: auth, error: authErr } = await db.auth.signInWithPassword({
+    email: pin + '@airbistro.staff', password: pin
+  });
+  if (authErr || !auth || !auth.user) { return loginFail(); }
+  // 2) 載入司機身分（authenticated 可讀 drivers）；非啟用司機(login_enabled=false)擋下並登出
   const { data: driver } = await db.from('drivers')
-    .select('*').eq('pin_code', pinBuffer).eq('login_enabled', true).single();
-  if (driver) {
-    driverData = driver;
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('main-screen').style.display = 'block';
-    const today = new Date().toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', weekday: 'long' });
-    document.getElementById('header-date').textContent = `${driver.name}・${today}`;
-    loadTodayOrders();
-    subscribeToOrders();
-  } else {
-    pinBuffer = '';
-    updatePinDots();
-    const errEl = document.getElementById('pin-error');
-    errEl.textContent = 'PIN 碼錯誤，請再試一次';
-    setTimeout(() => errEl.textContent = '', 2000);
-  }
+    .select('*').eq('pin_code', pin).eq('login_enabled', true).single();
+  if (!driver) { await db.auth.signOut(); return loginFail(); }
+  driverData = driver;
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('main-screen').style.display = 'block';
+  const today = new Date().toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', weekday: 'long' });
+  document.getElementById('header-date').textContent = `${driver.name}・${today}`;
+  loadTodayOrders();
+  subscribeToOrders();
+}
+
+function loginFail() {
+  pinBuffer = '';
+  updatePinDots();
+  const errEl = document.getElementById('pin-error');
+  errEl.textContent = 'PIN 碼錯誤，請再試一次';
+  setTimeout(() => errEl.textContent = '', 2000);
 }
 
 // ============================================================

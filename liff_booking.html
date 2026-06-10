@@ -552,9 +552,9 @@ async function initApp() {
     state.lineUserId = profile.userId;
     state.memberName = profile.displayName;
 
-    // 檢查是否已綁定
+    // 檢查是否已綁定（走 scoped RPC：客戶只能讀自己 UID 的會員資料）
     const { data: member } = await supabaseClient
-      .from('members').select('*').eq('line_user_id', state.lineUserId).single();
+      .rpc('get_member_by_uid', { p_uid: state.lineUserId });
 
     if (member && member.is_verified) {
       state.memberName  = member.display_name || profile.displayName;
@@ -587,45 +587,18 @@ async function verifyMember() {
   const btn = document.getElementById('btn-verify');
   btn.disabled = true; btn.textContent = '驗證中...';
 
-  // 格式化（+886 或 09 開頭）
+  // 格式化（09 開頭）
   const phoneFormatted = phone.startsWith('09') ? phone : '0' + phone;
-  const phone886 = '+886' + phoneFormatted.substring(1);
 
-  const { data: member } = await supabaseClient
-    .from('members').select('*')
-    .or(`phone.eq.${phoneFormatted},phone.eq.${phone886}`)
-    .single();
+  // 走 scoped RPC：伺服器端以電話/UID 查驗→綁定或註冊（取代直接讀寫 members 表）
+  const { data: member, error: vErr } = await supabaseClient
+    .rpc('verify_member', { p_phone: phoneFormatted, p_uid: state.lineUserId, p_name: state.memberName });
 
-  if (!member) {
-    // 開放式會員制：非 Ocard 名單者，當場註冊為新會員（不再擋下）
-    const { error: insErr } = await supabaseClient.from('members').insert({
-      line_user_id: state.lineUserId,
-      display_name: state.memberName,
-      phone: phoneFormatted,
-      member_tier: 'normal',
-      is_verified: true,
-      last_updated: new Date().toISOString()
-    });
-    if (insErr) {
-      showError('phone', '註冊時發生問題，請稍後再試。');
-      btn.disabled = false; btn.textContent = '驗證會員身份';
-      return;
-    }
-    state.memberPhone = phoneFormatted;
-    state.ocardTier   = 'normal';
-    state.isVerified  = true;
-    showToast(`✅ 歡迎加入 Feeling Bar，${state.memberName}！`);
-    goToLanding();
+  if (vErr || !member || !member.id) {
+    showError('phone', '驗證時發生問題，請稍後再試。');
+    btn.disabled = false; btn.textContent = '驗證會員身份';
     return;
   }
-
-  // 綁定 LINE userId
-  await supabaseClient.from('members').update({
-    line_user_id: state.lineUserId,
-    display_name: state.memberName,
-    is_verified: true,
-    last_updated: new Date().toISOString()
-  }).eq('id', member.id);
 
   state.memberPhone = member.phone || phoneFormatted;
   state.ocardTier   = member.member_tier;
@@ -679,9 +652,7 @@ async function openMyOrders() {
   // 以目前登入 UID 撈該客戶的單（最近在前）。
   // ⚠️ MVP 以前端 UID 過濾；RLS「僅 line_user_id 相符可讀」屬改權限(§5.4)未自行加，列 BLOCKERS 資安待補。
   const { data: orders, error } = await supabaseClient
-    .from('orders').select('*')
-    .eq('line_user_id', state.lineUserId)
-    .order('created_at', { ascending: false });
+    .rpc('get_my_orders', { p_uid: state.lineUserId });
   if (error) { list.innerHTML = '<div class="empty-orders">載入失敗，請稍後再試</div>'; return; }
   renderMyOrders(orders || []);
 }
@@ -719,10 +690,8 @@ async function cancelOrder(orderId) {
   if (!confirm('確定要取消這筆訂單嗎？取消後如需重訂請重新下單。')) return;
   // 僅 pending 可取消；以 status 條件防呆，避免取消到已派單的單
   const { data: updated, error } = await supabaseClient
-    .from('orders').update({ status: 'cancelled' })
-    .eq('id', orderId).eq('status', 'pending')
-    .select().single();
-  if (error || !updated) { showToast('⚠️ 此訂單已無法取消（可能已派單）'); openMyOrders(); return; }
+    .rpc('cancel_my_order', { p_order_id: orderId, p_uid: state.lineUserId });
+  if (error || !updated || !updated.id) { showToast('⚠️ 此訂單已無法取消（可能已派單）'); openMyOrders(); return; }
   notifyGAS({ type: 'order_cancelled', order: updated });   // 通知司機（GAS 端已加 handleCancelled）
   showToast('✅ 訂單已取消');
   openMyOrders();
@@ -949,7 +918,7 @@ async function submitOrder() {
     const randPart = Math.floor(Math.random() * 900 + 100);
     const orderNumber = `AIR-${datePart}-${randPart}`;
 
-    const { data: order, error } = await supabaseClient.from('orders').insert({
+    const orderObj = {
       order_number:        orderNumber,
       line_user_id:        state.lineUserId,
       member_name:         state.memberName,
@@ -963,15 +932,17 @@ async function submitOrder() {
       requested_time_slot: state.selectedSlot,
       member_notes:        state.notes,
       status:              'pending'
-    }).select().single();
+    };
+    // 保留 anon INSERT（鎖 SELECT 後仍可下單）；不 .select() 讀回，改用本地 orderObj
+    const { error } = await supabaseClient.from('orders').insert(orderObj);
 
     if (error) throw error;
 
     // 通知 GAS（非同步，不等待）
-    notifyGAS(order);
+    notifyGAS(orderObj);
 
     // 顯示成功畫面
-    document.getElementById('success-order-number').textContent = order.order_number;
+    document.getElementById('success-order-number').textContent = orderObj.order_number;
     document.getElementById('success-slot').textContent = state.selectedSlot;
     document.getElementById('top-bar').style.display = 'none';
     document.getElementById('cart-bar').style.display = 'none';

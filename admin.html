@@ -593,7 +593,7 @@ let currentRole = null;   // 'kevin' | 'xiaoli'
 // ══════════════════════════════════════════════════════════
 //  LOGIN
 // ══════════════════════════════════════════════════════════
-function doLogin() {
+async function doLogin() {
   const val = document.getElementById('pin-input').value.trim();
   const accounts = CONFIG.ACCOUNTS;
   if (val === accounts['Kevin執行長']) {
@@ -602,6 +602,16 @@ function doLogin() {
     currentRole = 'xiaoli';
   } else {
     document.getElementById('login-error').textContent = '密碼錯誤，請再試一次';
+    document.getElementById('pin-input').value = '';
+    setTimeout(() => { document.getElementById('login-error').textContent = ''; }, 3000);
+    return;
+  }
+  // Supabase Auth 登入 → authenticated 角色（保留 realtime + 完整存取）；密碼即 auth 密碼（員工輸入、不寫前端）
+  if (!supabase) supabase = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+  const { error: authErr } = await supabase.auth.signInWithPassword({ email: val + '@airbistro.staff', password: val });
+  if (authErr) {
+    currentRole = null;
+    document.getElementById('login-error').textContent = '登入驗證失敗，請稍後再試';
     document.getElementById('pin-input').value = '';
     setTimeout(() => { document.getElementById('login-error').textContent = ''; }, 3000);
     return;
@@ -617,6 +627,7 @@ document.getElementById('pin-input').addEventListener('keydown', e => {
 
 function doLogout() {
   if (realtimeChannel) supabase.removeChannel(realtimeChannel);
+  if (supabase && supabase.auth) supabase.auth.signOut();
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('pin-input').value = '';
@@ -662,8 +673,8 @@ async function initApp() {
   document.getElementById('header-date').textContent =
     now.toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
 
-  // Supabase
-  supabase = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+  // Supabase（doLogin 已建立並完成 auth；勿覆蓋，以免丟失 authenticated session）
+  if (!supabase) supabase = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
 
   // Load Maps then fetch data
   await loadGoogleMaps();
