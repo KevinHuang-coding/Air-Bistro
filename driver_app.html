@@ -73,6 +73,16 @@
   .gps-badge.inactive .gps-dot { background:var(--gray); }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
+  /* ===== 檢視日期列（各日標單量，供提前排班）===== */
+  .date-bar { background:var(--green-mid); padding:10px 20px 12px; border-bottom:1px solid rgba(201,168,76,0.15); }
+  .date-view-select {
+    width:100%; background:var(--green-card); color:var(--white);
+    border:1px solid rgba(201,168,76,0.35); border-radius:10px;
+    padding:10px 14px; font-size:15px; font-weight:600; outline:none;
+  }
+  .date-view-select:focus { border-color:var(--gold); }
+  .date-view-select option { background:var(--green-mid); }
+
   /* ===== 狀態列 ===== */
   .status-bar {
     background:rgba(201,168,76,0.08); border-bottom:1px solid rgba(201,168,76,0.15);
@@ -183,10 +193,14 @@
     </div>
   </div>
 
+  <div class="date-bar">
+    <select class="date-view-select" id="date-view-select" onchange="onViewDateChange()" title="切換檢視日期（各日標訂單數）"></select>
+  </div>
+
   <div class="status-bar">
     <div class="stat-item">
       <div class="stat-num" id="stat-total">0</div>
-      <div class="stat-label">今日訂單</div>
+      <div class="stat-label">當日訂單</div>
     </div>
     <div class="stat-item">
       <div class="stat-num" id="stat-pending">0</div>
@@ -198,7 +212,7 @@
     </div>
     <div class="stat-item">
       <div class="stat-num" id="stat-amount">$0</div>
-      <div class="stat-label">今日收款</div>
+      <div class="stat-label">當日收款</div>
     </div>
   </div>
 
@@ -216,7 +230,14 @@
 const db = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
 
 let driverData = null;
-let todayOrders = [];
+let todayOrders = [];        // 目前檢視日期的訂單（名稱沿用，內容隨 viewDate）
+let viewDate = null;         // 檢視日期 yyyy-MM-dd（預設今天，可切過去7天～未來30天）
+let rangeOrders = [];        // 範圍內全部訂單（算各日單量）
+
+// 本地日期 → yyyy-MM-dd（不用 toISOString：UTC+8 晚上會跳隔天）
+function ymd(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 let gpsInterval = null;
 let isTracking = false;
 let pinBuffer = '';
@@ -270,16 +291,53 @@ function loginFail() {
 }
 
 // ============================================================
-// 載入今日訂單
+// 載入訂單（過去 7 天～未來 30 天；切日期看各日單量，提前排班排車）
 // ============================================================
+const VIEW_PAST_DAYS = 7, VIEW_FUTURE_DAYS = 30;
+
 async function loadTodayOrders() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date();
+  if (!viewDate) viewDate = ymd(today);
+  const from = new Date(today); from.setDate(today.getDate() - VIEW_PAST_DAYS);
+  const to   = new Date(today); to.setDate(today.getDate() + VIEW_FUTURE_DAYS);
+
   const { data: orders } = await db.from('orders')
-    .select('*').eq('requested_date', today)
+    .select('*')
+    .gte('requested_date', ymd(from))
+    .lte('requested_date', ymd(to))
     .neq('status', 'cancelled')
     .order('requested_time_slot');
 
-  todayOrders = orders || [];
+  rangeOrders = orders || [];
+  buildDateOptions();
+  todayOrders = rangeOrders.filter(o => o.requested_date === viewDate);
+  renderOrders();
+  updateStats();
+}
+
+// 日期下拉：每日標訂單數
+function buildDateOptions() {
+  const sel = document.getElementById('date-view-select');
+  const counts = {};
+  rangeOrders.forEach(o => { counts[o.requested_date] = (counts[o.requested_date] || 0) + 1; });
+
+  const today = new Date();
+  const todayStr = ymd(today);
+  let html = '';
+  for (let i = -VIEW_PAST_DAYS; i <= VIEW_FUTURE_DAYS; i++) {
+    const d = new Date(today); d.setDate(today.getDate() + i);
+    const v = ymd(d);
+    const label = d.toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', weekday: 'short' });
+    const tag = v === todayStr ? '（今天）' : '';
+    const cnt = counts[v] || 0;
+    html += `<option value="${v}" ${v === viewDate ? 'selected' : ''}>📅 ${label}${tag} — ${cnt ? cnt + ' 單' : '無單'}</option>`;
+  }
+  sel.innerHTML = html;
+}
+
+function onViewDateChange() {
+  viewDate = document.getElementById('date-view-select').value;
+  todayOrders = rangeOrders.filter(o => o.requested_date === viewDate);
   renderOrders();
   updateStats();
 }
@@ -287,7 +345,7 @@ async function loadTodayOrders() {
 function renderOrders() {
   const container = document.getElementById('orders-container');
   if (!todayOrders.length) {
-    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🎉</div><div>今日暫無訂單</div></div>`;
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🎉</div><div>這一天暫無訂單</div></div>`;
     return;
   }
 
@@ -424,11 +482,10 @@ function updateGPSBadge(active) {
 // 即時訂單更新（Supabase Realtime）
 // ============================================================
 function subscribeToOrders() {
-  const today = new Date().toISOString().split('T')[0];
+  // 不鎖今天：任何日期的新單/變更都要刷新「各日單量」與當前檢視日（提前排班用）
   db.channel('driver-orders')
     .on('postgres_changes', {
-      event: '*', schema: 'public', table: 'orders',
-      filter: `requested_date=eq.${today}`
+      event: '*', schema: 'public', table: 'orders'
     }, () => { loadTodayOrders(); })
     .subscribe();
 }

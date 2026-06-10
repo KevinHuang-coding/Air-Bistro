@@ -194,6 +194,16 @@
 
     .panel-title { font-size: 14px; font-weight: 600; color: var(--white); }
 
+    /* 檢視日期下拉（各日標單量，供提前排人力車輛） */
+    .date-view-select {
+      background: var(--green-light); color: var(--white);
+      border: 1px solid rgba(201,168,76,0.35); border-radius: 8px;
+      padding: 6px 10px; font-size: 13px; font-weight: 600;
+      cursor: pointer; outline: none; max-width: 190px;
+    }
+    .date-view-select:focus { border-color: var(--gold); }
+    .date-view-select option { background: var(--green-mid); }
+
     .filter-tabs { display: flex; gap: 4px; }
 
     .filter-tab {
@@ -502,7 +512,7 @@
   <div class="stats-bar">
     <div class="stat-item">
       <div class="stat-value" id="stat-total">0</div>
-      <div class="stat-label">今日訂單</div>
+      <div class="stat-label" id="stat-total-label">當日訂單</div>
     </div>
     <div class="stat-item">
       <div class="stat-value" id="stat-pending">0</div>
@@ -514,7 +524,7 @@
     </div>
     <div class="stat-item">
       <div class="stat-value" id="stat-revenue">$0</div>
-      <div class="stat-label">今日營收</div>
+      <div class="stat-label">當日營收</div>
     </div>
   </div>
 
@@ -524,7 +534,7 @@
     <!-- Left: Order Panel -->
     <div class="order-panel">
       <div class="panel-header">
-        <div class="panel-title">今日訂單</div>
+        <select class="date-view-select" id="date-view-select" onchange="onViewDateChange()" title="切換檢視日期（各日標訂單數，供提前排人力車輛）"></select>
         <div class="filter-tabs">
           <button class="filter-tab active" onclick="setFilter('all', this)">全部</button>
           <button class="filter-tab" onclick="setFilter('pending', this)">待確認</button>
@@ -605,6 +615,13 @@ let selectedOrderId = null;          // 點卡開明細用（單選）
 let selectedOrderIds = new Set();    // 納入路線規劃用（多選）
 let routePlan = {};                  // orderId → { seq, etaISO, etaLabel, status:'ok'|'late'|'early', warnText }
 let currentFilter = 'all';
+let viewDate = null;                 // 目前檢視日期 yyyy-MM-dd（預設今天，可切過去7天～未來30天）
+let dateRangeOrders = [];            // 範圍內全部訂單（算各日單量＋切日免重撈）
+
+// 本地日期 → yyyy-MM-dd（不用 toISOString：UTC+8 晚上會跳隔天）
+function ymd(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 let trackingEnabled = false;
 let realtimeChannel = null;
 let currentRole = null;   // 'kevin' | 'xiaoli'
@@ -737,21 +754,69 @@ function initMap() {
 // ══════════════════════════════════════════════════════════
 //  DATA
 // ══════════════════════════════════════════════════════════
+// 檢視範圍：過去 7 天（回顧）～ 未來 30 天（提前排人力車輛）
+const VIEW_PAST_DAYS = 7, VIEW_FUTURE_DAYS = 30;
+
 async function refreshOrders() {
   if (!supabase) return;
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date();
+  if (!viewDate) viewDate = ymd(today);
+
+  const from = new Date(today); from.setDate(today.getDate() - VIEW_PAST_DAYS);
+  const to   = new Date(today); to.setDate(today.getDate() + VIEW_FUTURE_DAYS);
+
+  // 一次撈範圍內全部訂單（authenticated 全可讀；單量小，切日免重撈）
   const { data, error } = await supabase
     .from('orders')
     .select('*')
-    .eq('requested_date', today)
+    .gte('requested_date', ymd(from))
+    .lte('requested_date', ymd(to))
     .neq('status', 'cancelled')
     .order('requested_time_slot', { ascending: true });
 
   if (error) { toast('載入訂單失敗：' + error.message, 'error'); return; }
-  allOrders = data || [];
+  dateRangeOrders = data || [];
+  buildDateOptions();
+  applyViewDate();
+}
+
+// 日期下拉：每個日期直接標該日訂單數，一眼掃出哪天要加人加車
+function buildDateOptions() {
+  const sel = document.getElementById('date-view-select');
+  const counts = {};
+  dateRangeOrders.forEach(o => { counts[o.requested_date] = (counts[o.requested_date] || 0) + 1; });
+
+  const today = new Date();
+  const todayStr = ymd(today);
+  let html = '';
+  for (let i = -VIEW_PAST_DAYS; i <= VIEW_FUTURE_DAYS; i++) {
+    const d = new Date(today); d.setDate(today.getDate() + i);
+    const v = ymd(d);
+    const label = d.toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', weekday: 'short' });
+    const tag = v === todayStr ? '（今天）' : '';
+    const cnt = counts[v] || 0;
+    html += `<option value="${v}" ${v === viewDate ? 'selected' : ''}>${label}${tag} — ${cnt ? cnt + ' 單' : '無單'}</option>`;
+  }
+  sel.innerHTML = html;
+}
+
+// 依選定日期切出當日訂單（沿用 allOrders，下游 list/stats/地圖/路線規劃全跟著走）
+function applyViewDate() {
+  allOrders = dateRangeOrders.filter(o => o.requested_date === viewDate);
   renderOrderList();
   updateStats();
   updateMapMarkers();
+}
+
+function onViewDateChange() {
+  viewDate = document.getElementById('date-view-select').value;
+  // 換日＝換規劃情境：清掉跨日殘留的勾選與排程結果（多選限同一天）
+  selectedOrderIds.clear();
+  routePlan = {};
+  selectedOrderId = null;
+  document.getElementById('detail-panel').classList.remove('open');
+  document.getElementById('route-info').textContent = '勾選訂單後點擊，依預約時段＋路程自動排序並標示遲到風險';
+  applyViewDate();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1178,6 +1243,11 @@ function normPos(p) {
 // VRPTW（帶時間窗排程）：時段為主軸、同時段內距離為輔、ETA 含現場停留、超時警示
 async function optimizeRoute() {
   if (!map) { toast('地圖尚未載入', 'error'); return; }
+  // ETA 以「現在」起算，只對今天有意義；未來日先看單量排人力，當天再規劃路線
+  if (viewDate && viewDate !== ymd(new Date())) {
+    toast('路線規劃僅支援今天（ETA 以現在時刻起算）；未來日期請先用單量排人力', 'error');
+    return;
+  }
 
   // 只規劃「已勾選」且有經緯度的訂單（不再無差別抓全部 active）
   const picked = allOrders
