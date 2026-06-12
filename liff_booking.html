@@ -788,11 +788,12 @@ const CATEGORY_META = {
   cocktail_8:  { label: 'Feeling 8% 輕爽調酒系列',     badge: '8% vol' },
   cocktail_14: { label: 'Feeling 14% 熟成調酒系列',    badge: '14% vol' },
   cocktail_20: { label: 'Feeling 20% Strong 冰茶系列', badge: '20% vol' },
+  bottle:      { label: '精緻玻璃瓶裝調酒 Bottled Series', badge: '14% vol · 100ml' },
   coffee:      { label: '調酒師做的咖啡 Coffee-tail',  badge: '無酒精' },
   dessert:     { label: '甜點 Desserts',               badge: '' },
   bread:       { label: '經典麵包 Classic Bread',      badge: '' },
 };
-const CATEGORY_ORDER = ['cocktail_8', 'cocktail_14', 'cocktail_20', 'coffee', 'dessert', 'bread'];
+const CATEGORY_ORDER = ['cocktail_8', 'cocktail_14', 'cocktail_20', 'bottle', 'coffee', 'dessert', 'bread'];
 
 // 調酒/咖啡 DM 縮圖（軍師 2026-06-11 上架；有照片放 <img>，無則退回 emoji）
 const THUMB = {
@@ -814,12 +815,26 @@ const THUMB = {
   '櫻花斑蘭咖啡': 'img/cocktails/ck16.webp',
 };
 
+// 精緻玻璃瓶裝調酒 酒標縮圖（軍師 2026-06-12 上架；以分類 bottle 取用，避免與同名生調酒撞圖）
+const BOTTLE_THUMB = {
+  '蜜香紅茶荔枝琴酒': 'img/bottles/bottle01.webp',
+  '茉莉香片脆梅琴酒': 'img/bottles/bottle02.webp',
+  '泰奶焙火烏龍蘭姆酒': 'img/bottles/bottle03.webp',
+  '梔子花金萱威士忌': 'img/bottles/bottle04.webp',
+  '芭樂綠茶梅酒': 'img/bottles/bottle05.webp',
+  '煙燻百香果蘭姆酒': 'img/bottles/bottle06.webp',
+  '白桃翠玉莫奇朵': 'img/bottles/bottle07.webp',
+  '海鹽西瓜莫奇朵': 'img/bottles/bottle08.webp',
+  '包種茶青梅甜酒': 'img/bottles/bottle09.webp',
+  '青花椒烏梅蘭姆酒': 'img/bottles/bottle10.webp',
+};
+
 function renderMenu() {
   const grid = document.getElementById('menu-grid');
 
   const itemHtml = (item) => `
     <div class="menu-item" id="menu-item-${item.id}">
-      ${THUMB[item.name] ? `<img class="item-thumb" src="${THUMB[item.name]}" alt="${item.name}" loading="lazy">` : `<div class="item-emoji">${item.emoji}</div>`}
+      ${(item.category === 'bottle' ? BOTTLE_THUMB[item.name] : THUMB[item.name]) ? `<img class="item-thumb" src="${item.category === 'bottle' ? BOTTLE_THUMB[item.name] : THUMB[item.name]}" alt="${item.name}" loading="lazy">` : `<div class="item-emoji">${item.emoji}</div>`}
       <div class="item-info">
         <div class="item-name">${item.name}</div>
         <div class="item-desc">${item.description || ''}</div>
