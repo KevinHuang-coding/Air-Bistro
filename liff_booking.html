@@ -470,6 +470,12 @@
   <div class="card">
     <div class="card-title">🕐 選擇時段</div>
     <div class="time-slots" id="time-slots">
+      <div class="time-slot" data-slot="17:00-17:30" onclick="selectSlot(this)">17:00 - 17:30<div class="slot-label">&nbsp;</div></div>
+      <div class="time-slot" data-slot="17:30-18:00" onclick="selectSlot(this)">17:30 - 18:00<div class="slot-label">&nbsp;</div></div>
+      <div class="time-slot" data-slot="18:00-18:30" onclick="selectSlot(this)">18:00 - 18:30<div class="slot-label">&nbsp;</div></div>
+      <div class="time-slot" data-slot="18:30-19:00" onclick="selectSlot(this)">18:30 - 19:00<div class="slot-label">&nbsp;</div></div>
+      <div class="time-slot" data-slot="19:00-19:30" onclick="selectSlot(this)">19:00 - 19:30<div class="slot-label">&nbsp;</div></div>
+      <div class="time-slot" data-slot="19:30-20:00" onclick="selectSlot(this)">19:30 - 20:00<div class="slot-label">&nbsp;</div></div>
       <div class="time-slot" data-slot="20:00-20:30" onclick="selectSlot(this)">20:00 - 20:30<div class="slot-label">&nbsp;</div></div>
       <div class="time-slot" data-slot="20:30-21:00" onclick="selectSlot(this)">20:30 - 21:00<div class="slot-label">&nbsp;</div></div>
       <div class="time-slot" data-slot="21:00-21:30" onclick="selectSlot(this)">21:00 - 21:30<div class="slot-label">&nbsp;</div></div>
@@ -479,7 +485,7 @@
       <div class="time-slot" data-slot="23:00-23:30" onclick="selectSlot(this)">23:00 - 23:30<div class="slot-label">&nbsp;</div></div>
       <div class="time-slot" data-slot="23:30-24:00" onclick="selectSlot(this)">23:30 - 24:00<div class="slot-label">&nbsp;</div></div>
     </div>
-    <div class="beta-slot-note">🧪 Beta 目前開放 20:00–24:00 可預約（每時段限 2 組）</div>
+    <div class="beta-slot-note">🧪 Beta 開放 17:00–24:00 預約</div>
   </div>
   <div class="card">
     <div class="card-title">📍 配送地址</div>
@@ -933,22 +939,27 @@ function ymd(d) {
   return `${y}-${m}-${day}`;
 }
 
-// 日期下拉：今天起 30 天
+// 軟啟動檔期白名單：只開放這些日期（皆週五/六/日）。日後要開七月只需往陣列加日期。
+const ALLOWED_DATES = ['2026-06-19','2026-06-20','2026-06-21','2026-06-26','2026-06-27','2026-06-28'];
+
+// 日期下拉：白名單驅動，只渲染 >= 今天的開放日；七月以後標示 Beta coming soon（不可選）
 function renderDates() {
   const sel = document.getElementById('date-select');
   const fmt = (d) => d.toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', weekday: 'short' });
-  const base = new Date();
+  const today = ymd(new Date());          // 本地 yyyy-MM-dd，可與白名單字串直接比較
   let html = '';
-  for (let i = 0; i < 30; i++) {
-    const d = new Date(base); d.setDate(base.getDate() + i);
-    const tag = i === 0 ? '（今天）' : i === 1 ? '（明天）' : '';
-    html += `<option value="${ymd(d)}">${fmt(d)}${tag}</option>`;
-  }
+  ALLOWED_DATES.filter(ds => ds >= today).forEach(ds => {
+    // ds 為 yyyy-MM-dd；用本地時間建 Date 顯示星期（避免 UTC 跨日）
+    const [y, m, day] = ds.split('-').map(Number);
+    const d = new Date(y, m - 1, day);
+    html += `<option value="${ds}">${fmt(d)}</option>`;
+  });
+  html += `<option value="" disabled>7 月起 Beta 測試中，coming soon</option>`;
   sel.innerHTML = html;
-  state.selectedDate = sel.value;          // 預設今天
+  state.selectedDate = sel.value;          // 預設第一個開放日（disabled 項不會被選中）
   state.selectedSlot = null;
   document.querySelectorAll('#time-slots .time-slot').forEach(e => e.classList.remove('selected'));
-  fetchSlotAvailability(state.selectedDate);
+  if (state.selectedDate) fetchSlotAvailability(state.selectedDate);
 }
 
 function onDateChange() {
@@ -958,7 +969,7 @@ function onDateChange() {
   fetchSlotAvailability(state.selectedDate);
 }
 
-// 查該日各時段已下單組數（RPC get_slot_availability），滿 2 組→反灰「已滿檔」不可選
+// 查該日各時段已下單組數（RPC get_slot_availability），達運能上限→反灰「已額滿」不可選（門檻純後端，不透給客戶）
 async function fetchSlotAvailability(date) {
   const slots = document.querySelectorAll('#time-slots .time-slot');
   slots.forEach(el => { const l = el.querySelector('.slot-label'); if (l) l.innerHTML = '查詢中…'; });
@@ -979,10 +990,10 @@ async function fetchSlotAvailability(date) {
     if (cnt >= 2) {
       el.classList.add('full');
       if (el.classList.contains('selected')) { el.classList.remove('selected'); state.selectedSlot = null; }
-      if (label) label.innerHTML = '已滿檔';
+      if (label) label.innerHTML = '已額滿';
     } else {
       el.classList.remove('full');
-      if (label) label.innerHTML = '可預約';
+      if (label) label.innerHTML = '該時段尚可預約';
     }
   });
 }
