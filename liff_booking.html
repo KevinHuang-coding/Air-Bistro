@@ -264,6 +264,48 @@
     font-size: 13px; font-weight: 700; color: var(--mint-deep);
   }
   .beta-slot-note { font-size: 12px; color: var(--ink-soft); margin-top: 10px; }
+  /* ===== 新北市局部服務提示（比照 beta-slot-note 小字字級）===== */
+  .beta-area-note { font-size: 12px; color: var(--ink-soft); margin-top: 10px; line-height: 1.6; }
+
+  /* ===== 預覽＋選禮物頁 ===== */
+  .gift-cat-header { font-size: 15px; font-weight: 700; color: var(--mint-deep); margin: 16px 0 8px; }
+  .gift-item {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 14px; padding: 12px 14px; margin-bottom: 10px;
+    display: flex; align-items: center; gap: 14px; cursor: pointer;
+    box-shadow: var(--shadow); transition: border-color 0.2s, background 0.2s;
+  }
+  .gift-item.selected { border-color: var(--mint); background: var(--mint-soft); }
+  .gift-tag { font-size: 12px; color: var(--mint-deep); font-weight: 700; margin-top: 4px; }
+  .gift-check {
+    width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+    border: 1px solid var(--mint); color: var(--mint-deep);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: 700;
+  }
+  .gift-item.selected .gift-check { background: var(--mint); color: #fff; }
+  .gift-locked-note {
+    background: var(--mint-soft); border: 1px solid var(--mint);
+    border-radius: 12px; padding: 14px 16px; font-size: 13.5px;
+    color: var(--mint-deep); font-weight: 700; text-align: center; line-height: 1.6;
+  }
+  .gift-selected-empty { font-size: 12.5px; color: var(--ink-soft); }
+  .gift-selected-title { font-size: 13px; font-weight: 700; color: var(--mint-deep); margin-bottom: 8px; }
+  .gift-selected-row {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px; color: var(--ink); padding: 6px 0;
+  }
+  .gift-selected-row span { color: var(--mint-deep); font-weight: 700; }
+  .gift-badge {
+    font-size: 10px; font-weight: 700; color: var(--mint-deep);
+    background: var(--mint-soft); border: 1px solid var(--mint);
+    border-radius: 10px; padding: 1px 7px; margin-left: 6px;
+  }
+  .gift-summary-success {
+    background: var(--mint-soft); border: 1px solid var(--mint);
+    border-radius: 12px; padding: 10px 14px; margin-top: 14px;
+    font-size: 13px; color: var(--mint-deep); font-weight: 600; line-height: 1.6;
+  }
 
   /* ===== 訂單確認 ===== */
   .order-item-row {
@@ -460,9 +502,36 @@
   <div style="height:80px"></div>
 </div>
 
+<!-- ===== STEP 2: 預覽＋選禮物 ===== -->
+<div id="screen-gift" class="screen">
+  <button class="back-btn" onclick="goToStep('menu')"><span class="arrow">←</span> 返回</button>
+  <div class="card">
+    <div class="card-title">🛒 已選定之酒款與點心預覽</div>
+    <div id="gift-cart-preview"><!-- 動態生成 --></div>
+    <hr class="order-divider">
+    <div class="order-item-row" style="border-bottom:none">
+      <span style="color:var(--gray)">小計</span>
+      <span id="gift-cart-subtotal" style="font-weight:700; color:var(--mint-deep)">$0</span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">🎁 Beta 試營運贈禮</div>
+    <div id="gift-locked-note" class="gift-locked-note" style="display:none">
+      本單滿 $800 即可挑選 2 份 Beta 試營運贈禮 🎁
+    </div>
+    <div id="gift-pool-wrap" style="display:none">
+      <div class="form-hint" style="margin-bottom:6px">瓶裝酒・經典麵包・甜點自由混搭，最多挑 2 件（可少選），贈禮 $0、不計入金額</div>
+      <div id="gift-pool"><!-- 動態生成 --></div>
+    </div>
+    <div id="gift-selected" style="margin-top:14px"><!-- 即時預覽 --></div>
+  </div>
+  <button class="btn-primary" onclick="goToStep('address')" style="margin-bottom:20px">下一步 →</button>
+  <div style="height:20px"></div>
+</div>
+
 <!-- ===== STEP 3: 配送資訊 ===== -->
 <div id="screen-address" class="screen">
-  <button class="back-btn" onclick="goToStep('menu')"><span class="arrow">←</span> 返回</button>
+  <button class="back-btn" onclick="goToStep('gift')"><span class="arrow">←</span> 返回</button>
   <div class="card">
     <div class="card-title">📅 選擇日期</div>
     <select id="date-select" class="field-select" onchange="onDateChange()"></select>
@@ -500,6 +569,7 @@
           <option>北投區</option><option>內湖區</option><option>南港區</option><option>文山區</option>
         </select>
       </div>
+      <div class="beta-area-note">新北市開放局部區域進行服務，請在此欄填寫地址並與小編討論</div>
     </div>
     <div class="form-group">
       <div id="address-autocomplete-container">
@@ -579,6 +649,7 @@
       抵達您家樓下<br><br>
       <span style="color:var(--gray); font-size:13px">送達時以「現金」或「LINE Pay」結帳即可，謝謝 🙏</span>
     </div>
+    <div id="success-gifts" class="gift-summary-success" style="display:none"></div>
     <button class="btn-primary" onclick="resetApp()" style="margin-top:32px">返回首頁</button>
   </div>
 </div>
@@ -592,7 +663,7 @@
   </div>
   <div style="display:flex; align-items:center; gap:16px">
     <div class="cart-total">$<span id="cart-total-num">0</span></div>
-    <button class="btn-primary" id="btn-next-step" onclick="goToStep('address')"
+    <button class="btn-primary" id="btn-next-step" onclick="goToStep('gift')"
             style="width:auto; padding:12px 20px; font-size:14px" disabled>下一步 →</button>
   </div>
 </div>
@@ -614,6 +685,7 @@ let state = {
   ocardTier: null,
   isVerified: false,
   cart: {},          // { itemId: qty }
+  gifts: [],         // Beta 贈禮：選定的 menu item id 字串（最多 2）
   menuItems: [],
   selectedDate: null,
   selectedSlot: null,
@@ -718,6 +790,7 @@ function goToLanding() {
 function startNewOrder() {
   // 開新單：清空狀態再進菜單（loadMenu 會撈品項 + renderMenu + goToStep('menu')）
   state.cart = {};
+  state.gifts = [];
   state.selectedDate = null; state.selectedSlot = null;
   state.deliveryAddress = null; state.notes = null;
   loadMenu();
@@ -929,6 +1002,117 @@ function getCartTotal() {
 }
 
 // ============================================================
+// 預覽 ＋ 選禮物頁（選酒款 → 此頁 → 地址）
+// ============================================================
+const GIFT_THRESHOLD = CONFIG.MIN_ORDER_AMOUNT;      // $800 門檻＝最低消費同一個小計來源（不另算）
+const GIFT_MAX = 2;                                   // 自由混搭最多 2 件、可少選
+const GIFT_CATEGORIES = ['bottle', 'bread', 'dessert']; // 禮物池＝menu 既有三類，依實際 category 取用（不硬編清單）
+
+// 禮物池：沿用 menu 既有品項（瓶裝酒／經典麵包／甜點）
+function giftPool() {
+  return state.menuItems.filter(i => GIFT_CATEGORIES.includes(i.category));
+}
+
+// 進入禮物頁時呼叫：渲染酒款預覽 + 依小計決定是否開放選禮物
+function renderGiftPage() {
+  const subtotal = getCartTotal();
+
+  // ① 已選定之酒款與點心預覽
+  const cartItems = getCartItems();
+  document.getElementById('gift-cart-preview').innerHTML = cartItems.map(i => `
+    <div class="order-item-row">
+      <div>
+        <div class="order-item-name">${i.emoji} ${i.name}</div>
+        <div class="order-item-qty">× ${i.qty}</div>
+      </div>
+      <div class="order-item-subtotal">$${i.subtotal}</div>
+    </div>`).join('');
+  document.getElementById('gift-cart-subtotal').textContent = '$' + subtotal;
+
+  // ② Beta 贈禮：達門檻才顯示禮物池
+  const poolWrap   = document.getElementById('gift-pool-wrap');
+  const lockedNote = document.getElementById('gift-locked-note');
+  if (subtotal >= GIFT_THRESHOLD) {
+    lockedNote.style.display = 'none';
+    poolWrap.style.display = 'block';
+    renderGiftPool();
+  } else {
+    poolWrap.style.display = 'none';
+    lockedNote.style.display = 'block';
+    state.gifts = [];   // 未達門檻不保留任何贈禮
+  }
+  renderGiftSelected();
+}
+
+// 禮物池：依分類分組（沿用 CATEGORY_META 顯示名與 CATEGORY_ORDER 順序）
+function renderGiftPool() {
+  const pool = giftPool();
+  const cats = CATEGORY_ORDER.filter(c => GIFT_CATEGORIES.includes(c));
+  document.getElementById('gift-pool').innerHTML = cats.map(cat => {
+    const items = pool.filter(i => i.category === cat);
+    if (!items.length) return '';
+    const meta = CATEGORY_META[cat] || { label: cat };
+    return `<div class="gift-cat-header">${meta.label}</div>` + items.map(giftCardHtml).join('');
+  }).join('');
+}
+
+function giftCardHtml(item) {
+  const picked = state.gifts.includes(String(item.id));
+  const thumb = (item.category === 'bottle' ? BOTTLE_THUMB[item.name] : THUMB[item.name]);
+  return `
+    <div class="gift-item ${picked ? 'selected' : ''}" onclick="toggleGift('${item.id}')">
+      ${thumb ? `<img class="item-thumb" src="${thumb}" alt="${item.name}" loading="lazy">` : `<div class="item-emoji">${item.emoji}</div>`}
+      <div class="item-info">
+        <div class="item-name">${item.name}</div>
+        <div class="item-desc">${item.description || ''}</div>
+        <div class="gift-tag">🎁 Beta 贈禮 $0</div>
+      </div>
+      <div class="gift-check">${picked ? '✓' : ''}</div>
+    </div>`;
+}
+
+function toggleGift(id) {
+  id = String(id);
+  const idx = state.gifts.indexOf(id);
+  if (idx >= 0) {
+    state.gifts.splice(idx, 1);
+  } else {
+    if (state.gifts.length >= GIFT_MAX) { showToast(`🎁 最多挑選 ${GIFT_MAX} 份贈禮`); return; }
+    state.gifts.push(id);
+  }
+  renderGiftPool();
+  renderGiftSelected();
+}
+
+// 即時預覽：客人目前挑的贈禮
+function renderGiftSelected() {
+  const wrap = document.getElementById('gift-selected');
+  const items = getGiftItems();
+  if (!items.length) {
+    wrap.innerHTML = `<div class="gift-selected-empty">尚未挑選贈禮（最多 ${GIFT_MAX} 份，可少選）</div>`;
+    return;
+  }
+  wrap.innerHTML = `<div class="gift-selected-title">已選贈禮 ${items.length}/${GIFT_MAX}</div>` +
+    items.map(i => `<div class="gift-selected-row"><span style="color:var(--ink); font-weight:600">🎁 ${i.giftName}</span><span>$0</span></div>`).join('');
+}
+
+// 贈禮以 $0 品項併入 items（標 is_gift + 🎁 前綴）→ 同時寫進 Supabase、GAS 派單通知、成功頁明細；不計入金額
+function getGiftItems() {
+  return state.gifts.map(id => {
+    const item = state.menuItems.find(m => String(m.id) === String(id));
+    if (!item) return null;
+    return {
+      id: item.id,
+      name: `🎁 ${item.name}（Beta贈禮）`,
+      giftName: item.name,
+      emoji: '🎁',
+      price: 0, qty: 1, subtotal: 0,
+      is_gift: true
+    };
+  }).filter(Boolean);
+}
+
+// ============================================================
 // 日期 & 時段選擇
 // ============================================================
 // 本地日期 → yyyy-MM-dd（不用 toISOString，避免 UTC+8 跨日把日期算錯）
@@ -940,7 +1124,7 @@ function ymd(d) {
 }
 
 // 軟啟動檔期白名單：只開放這些日期（皆週五/六/日）。日後要開七月只需往陣列加日期。
-const ALLOWED_DATES = ['2026-06-19','2026-06-20','2026-06-21','2026-06-26','2026-06-27','2026-06-28'];
+const ALLOWED_DATES = ['2026-06-26','2026-06-27','2026-06-28','2026-07-03','2026-07-04','2026-07-05','2026-07-10','2026-07-11','2026-07-12','2026-07-17','2026-07-18','2026-07-19','2026-07-24','2026-07-25','2026-07-26','2026-07-31','2026-08-01','2026-08-02'];
 
 // 日期下拉：白名單驅動，只渲染 >= 今天的開放日；七月以後標示 Beta coming soon（不可選）
 function renderDates() {
@@ -954,7 +1138,7 @@ function renderDates() {
     const d = new Date(y, m - 1, day);
     html += `<option value="${ds}">${fmt(d)}</option>`;
   });
-  html += `<option value="" disabled>7 月起 Beta 測試中，coming soon</option>`;
+  html += `<option value="" disabled>更多日期陸續開放，Beta 測試中，coming soon</option>`;
   sel.innerHTML = html;
   state.selectedDate = sel.value;          // 預設第一個開放日（disabled 項不會被選中）
   state.selectedSlot = null;
@@ -1019,15 +1203,16 @@ function goToConfirm() {
   state.deliveryAddress = detail.includes('台北市') ? detail : `台北市${district}${detail}`;
   state.notes = document.getElementById('input-notes').value;
 
-  // 填入確認頁
+  // 填入確認頁（含 Beta 贈禮 $0 列）
   const items = getCartItems();
-  document.getElementById('confirm-items').innerHTML = items.map(i => `
+  const gifts = getGiftItems();
+  document.getElementById('confirm-items').innerHTML = [...items, ...gifts].map(i => `
     <div class="order-item-row">
       <div>
-        <div class="order-item-name">${i.emoji} ${i.name}</div>
+        <div class="order-item-name">${i.emoji} ${i.is_gift ? i.giftName + '<span class="gift-badge">Beta贈禮</span>' : i.name}</div>
         <div class="order-item-qty">× ${i.qty}</div>
       </div>
-      <div class="order-item-subtotal">$${i.subtotal}</div>
+      <div class="order-item-subtotal">${i.is_gift ? '贈禮' : '$' + i.subtotal}</div>
     </div>
   `).join('');
 
@@ -1074,8 +1259,10 @@ async function submitOrder() {
   btn.disabled = true; btn.textContent = '提交中...';
 
   try {
-    const items = getCartItems();
-    const subtotal = getCartTotal();
+    const giftItems = getGiftItems();
+    // 贈禮以 $0 品項併入 items：寫進 Supabase orders.items（jsonb）→ GAS 派單通知與成功頁明細自動帶出；不影響金額
+    const items = [...getCartItems(), ...giftItems];
+    const subtotal = getCartTotal();     // 小計只算購物車（贈禮 $0 不計入、不影響 $800 門檻判斷）
     const discount = getDiscount(subtotal);
     const total = subtotal - discount;   // 應付金額（已扣折扣）= 司機收款 = orders.total_amount
 
@@ -1111,6 +1298,14 @@ async function submitOrder() {
     // 顯示成功畫面
     document.getElementById('success-order-number').textContent = orderObj.order_number;
     document.getElementById('success-slot').textContent = state.selectedSlot;
+    // 成功頁明細：列出本單 Beta 贈禮（讓客人確認、與 LINE 派單一致）
+    const gEl = document.getElementById('success-gifts');
+    if (giftItems.length) {
+      gEl.innerHTML = '🎁 本單含 Beta 試營運贈禮：' + giftItems.map(g => g.giftName).join('、');
+      gEl.style.display = 'block';
+    } else {
+      gEl.style.display = 'none';
+    }
     document.getElementById('top-bar').style.display = 'none';
     document.getElementById('cart-bar').style.display = 'none';
     showScreen('success');
@@ -1152,17 +1347,19 @@ function goToStep(step) {
   const cartBar = document.getElementById('cart-bar');
   topBar.style.display = 'flex';
 
-  const steps = { verify: 0, menu: 1, address: 2, confirm: 3, success: 0 };
+  const steps = { verify: 0, menu: 1, gift: 2, address: 3, confirm: 4, success: 0 };
   const stepNum = steps[step] || 0;
   document.getElementById('step-text').textContent = stepNum > 0 ? `步驟 ${stepNum} / 4` : '';
 
   cartBar.style.display = step === 'menu' ? 'flex' : 'none';
+  if (step === 'gift') renderGiftPage();
   if (step === 'address') renderDates();
   window.scrollTo(0, 0);
 }
 
 function resetApp() {
   state.cart = {};
+  state.gifts = [];
   state.selectedDate = null; state.selectedSlot = null;
   state.deliveryAddress = null; state.notes = null;
   goToLanding();   // 回首頁＝回落地頁（§4 單一入口分流）
